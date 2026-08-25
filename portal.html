@@ -575,6 +575,7 @@ async function ucitaj(){
     pd.naplate     = fd.naplate     || [];
     pd.settings    = fd.settings    || {};
     pd.troskoviRucni = fd.troskoviRucni || [];
+    pd.klijenti    = fd.klijenti    || [];
 
     let firme = keys['knjigo_firme'] || [];
     if(typeof firme==='string'){ try{ firme=JSON.parse(firme); }catch(e){ firme=[]; } }
@@ -587,12 +588,23 @@ async function ucitaj(){
     document.getElementById('stime').textContent=new Date().toLocaleTimeString('sr-RS');
     document.getElementById('i-sync').textContent=new Date().toLocaleString('sr-RS');
   } catch(e){
+    console.error('Greška pri učitavanju podataka:', e);
     document.getElementById('sdot').className='sdot err';
-    document.getElementById('stxt').textContent='Greška pri učitavanju';
+    document.getElementById('stxt').textContent='Greška: '+(e.message||'nepoznata');
   }
 }
 
-function renderAll(){ popuniGodine(); renderPregled(); renderFakture(); renderKPO(); renderTroskovnik(); renderIzvodi(); renderPoreska(); renderKalendar(); proveriNoveFakture(); }
+function renderAll(){
+  const koraci = [
+    ['popuniGodine', popuniGodine], ['renderPregled', renderPregled], ['renderFakture', renderFakture],
+    ['renderKPO', renderKPO], ['renderTroskovnik', renderTroskovnik], ['renderIzvodi', renderIzvodi],
+    ['renderPoreska', renderPoreska], ['renderKalendar', renderKalendar], ['proveriNoveFakture', proveriNoveFakture],
+  ];
+  for(const [naziv, fn] of koraci){
+    try{ fn(); }
+    catch(e){ console.error('Greška u '+naziv+':', e); }
+  }
+}
 
 function popuniGodine(){
   const godine = [...new Set(pd.kpo.map(k=>(k.dat||'').slice(0,4)).filter(g=>g.length===4))].sort().reverse();
@@ -703,21 +715,35 @@ function renderPregled(){
 }
 
 // ── ZAJEDNIČKA FUNKCIJA: neizmireni promet (fakture + KPO), koristi Pregled i Kalendar ──
+function normalizujNaziv(s){
+  return (s||'').toString().trim().toLowerCase()
+    .replace(/š/g,'s').replace(/đ/g,'dj').replace(/č/g,'c').replace(/ć/g,'c').replace(/ž/g,'z');
+}
+
+function rokZaKlijenta(nazivKlijenta){
+  const nn = normalizujNaziv(nazivKlijenta);
+  if(!nn) return 60;
+  const kl = (pd.klijenti||[]).find(k => normalizujNaziv(k.naziv) === nn);
+  const r = kl ? parseInt(kl.rok,10) : NaN;
+  return (!isNaN(r) && r>=0) ? r : 60; // podrazumevano 60 dana — isto kao Finity
+}
+
 function izracunajOcekivaneProlive(){
   const naplaceno = izracunajStatuse();
   const jeStornoKpo = k => (k.vrsta||'')==='Storno fakture' || parseFloat(k.iz||k.uk||0) < 0;
 
+  // datumIzdavanja se čuva odvojeno od roka — rok se računa: datum izdavanja + broj dana klijenta (podrazumevano 60)
   const prometMap = new Map();
   pd.kpo.forEach(k=>{
     if(jeStornoKpo(k)) return;
     const br = k.br || '';
     if(!br) return;
-    prometMap.set(br, {br, klijent:k.kl||'—', iznos:parseFloat(k.iz||k.uk||0), datum:k.dat||''});
+    prometMap.set(br, {br, klijent:k.kl||'—', iznos:parseFloat(k.iz||k.uk||0), datumIzdavanja:k.dat||''});
   });
   pd.fakture.forEach(f=>{
     if((f.status||'').toLowerCase()==='storno') return;
     if(!prometMap.has(f.br)){
-      prometMap.set(f.br, {br:f.br, klijent:f.klijentNaziv||'—', iznos:parseFloat(f.ukupno||0), datum:f.valuta||f.datum||''});
+      prometMap.set(f.br, {br:f.br, klijent:f.klijentNaziv||'—', iznos:parseFloat(f.ukupno||0), datumIzdavanja:f.datum||''});
     }
   });
 
@@ -725,9 +751,15 @@ function izracunajOcekivaneProlive(){
   return [...prometMap.values()]
     .map(p=>{
       const st = statusZaBroj(p.br, p.iznos, naplaceno);
-      const kasni = !!(p.datum && p.datum < danas);
-      const dana = p.datum ? Math.abs(Math.ceil((new Date(danas)-new Date(p.datum))/86400000)) : 0;
-      return {...p, st, kasni, dana, preostalo: st.ostatak!=null?st.ostatak:p.iznos};
+      const rokDana = rokZaKlijenta(p.klijent);
+      let rokDatum = '';
+      if(p.datumIzdavanja){
+        const d = new Date(p.datumIzdavanja+'T00:00:00');
+        if(!isNaN(d)){ d.setDate(d.getDate()+rokDana); rokDatum = d.toISOString().slice(0,10); }
+      }
+      const kasni = !!(rokDatum && rokDatum < danas);
+      const dana = rokDatum ? Math.abs(Math.round((new Date(danas)-new Date(rokDatum))/86400000)) : 0;
+      return {...p, datum:rokDatum, st, kasni, dana, rokDana, preostalo: st.ostatak!=null?st.ostatak:p.iznos};
     })
     .filter(x=>x.st.cls!=='ok')
     .sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
@@ -934,7 +966,9 @@ function proveriNoveFakture(){
   const seenKey = 'fp_seen_'+firma.id;
   const seen = parseInt(localStorage.getItem(seenKey) || pd.fakture.length);
   const novih = pd.fakture.length - seen;
-  const fakTab = document.querySelectorAll('.tab')[1];
+  const tabovi = document.querySelectorAll('.tab');
+  const fakTab = tabovi[1];
+  if(!fakTab) return;
   const postojeciBadge = fakTab.querySelector('.tab-badge');
   if(postojeciBadge) postojeciBadge.remove();
   if(novih > 0){
