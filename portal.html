@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Finity Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--navy:#1B2B4B;--gold:#C9A84C;--slate:#F3F4F8;--brd:#E4E6EE;--green:#27AE60;--red:#E74C3C;--orange:#F39C12;--blue:#4F6EF7}
+body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);min-height:100vh;font-size:14px}
+
+/* LOGIN */
+#login-screen{position:fixed;inset:0;background:linear-gradient(135deg,#0d2340,#1B2B4B);display:flex;align-items:center;justify-content:center;padding:20px;z-index:100}
+.lcard{background:#fff;border-radius:20px;padding:32px 28px;width:100%;max-width:380px;box-shadow:0 30px 80px rgba(0,0,0,.4)}
+.l-ic{width:52px;height:52px;background:var(--gold);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:var(--navy);margin:0 auto 12px}
+.l-title{font-size:21px;font-weight:800;color:var(--navy);text-align:center}
+.l-sub{font-size:12.5px;color:#96A3B5;margin-top:4px;text-align:center;margin-bottom:22px}
+.lf{margin-bottom:13px}
+.lf label{display:block;font-size:11px;font-weight:700;color:#5A6880;margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+.lf select,.lf input{width:100%;padding:12px 13px;background:var(--slate);border:1.5px solid var(--brd);border-radius:11px;font-size:14px;font-family:'Inter',sans-serif;outline:none;color:var(--navy);transition:border-color .15s}
+.lf select:focus,.lf input:focus{border-color:var(--gold);background:#fff}
+.lbtn{width:100%;padding:13px;background:var(--navy);color:#fff;border:none;border-radius:11px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;margin-top:4px;transition:opacity .15s}
+.lbtn:active{opacity:.85}
+.lerr{font-size:12px;color:var(--red);margin-top:8px;display:none;text-align:center}
+
+/* HEADER */
+.hdr{background:var(--navy);padding:12px 16px;display:none;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.hdr-l{display:flex;align-items:center;gap:8px}
+.hdr-ic{width:28px;height:28px;background:var(--gold);border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--navy);font-size:12px}
+.hdr-nm{font-size:13.5px;font-weight:800;color:#fff}.hdr-nm span{color:var(--gold)}
+.hdr-r{display:flex;align-items:center;gap:8px}
+.hdr-firma{font-size:11.5px;font-weight:700;color:#fff;text-align:right}
+.hdr-sub{font-size:10px;color:rgba(255,255,255,.4)}
+.out-btn{background:rgba(255,255,255,.1);border:none;color:rgba(255,255,255,.55);font-size:11px;padding:5px 9px;border-radius:6px;cursor:pointer;font-family:'Inter',sans-serif}
+
+/* SYNC */
+.sbar{background:#fff;border-bottom:1px solid var(--brd);padding:6px 15px;display:none;align-items:center;gap:7px;font-size:11.5px}
+.sdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;animation:bl 1.5s ease infinite}
+.sdot.ok{background:#4DD996}.sdot.wait{background:var(--orange)}.sdot.err{background:var(--red)}
+@keyframes bl{0%,100%{opacity:1}50%{opacity:.3}}
+.stxt{color:#5A6880;flex:1}.stime{color:#96A3B5;font-size:10.5px}
+
+/* APP */
+#app{display:none}
+.wrap{padding:12px}
+
+/* TABS - scrollable */
+.tabs{display:flex;background:#fff;border-radius:11px;padding:3px;gap:3px;margin-bottom:12px;box-shadow:0 1px 6px rgba(27,43,75,.07);overflow-x:auto}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex-shrink:0;padding:8px 10px;text-align:center;font-size:11.5px;font-weight:600;color:#96A3B5;border-radius:8px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.tab.active{background:var(--navy);color:#fff}
+
+/* STATS 2x2 */
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px}
+.st{background:#fff;border-radius:11px;padding:13px;box-shadow:0 1px 5px rgba(27,43,75,.07)}
+.st.nv{background:var(--navy)}
+.st.gld{background:linear-gradient(135deg,#C9A84C,#E8C96A)}
+.st-ic{font-size:18px;margin-bottom:7px}
+.st-v{font-size:18px;font-weight:800;color:var(--navy);letter-spacing:-.3px;line-height:1.1}
+.st.nv .st-v{color:#fff}
+.st.gld .st-v{color:var(--navy)}
+.st-l{font-size:10px;color:#96A3B5;margin-top:3px}
+.st.nv .st-l{color:rgba(255,255,255,.45)}
+.st.gld .st-l{color:rgba(27,43,75,.6)}
+
+/* PRAG BAR */
+.prag-card{background:#fff;border-radius:11px;padding:14px;box-shadow:0 1px 5px rgba(27,43,75,.07);margin-bottom:11px}
+.prag-row{margin-bottom:12px}
+.prag-row:last-child{margin-bottom:0}
+.prag-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.prag-lbl{font-size:12px;font-weight:600;color:var(--txt2)}
+.prag-val{font-size:12px;font-weight:700}
+.prag-bar-bg{height:8px;background:var(--slate);border-radius:4px;overflow:hidden}
+.prag-bar-fill{height:100%;border-radius:4px;transition:width 1s ease}
+.prag-note{font-size:10.5px;color:#96A3B5;margin-top:4px}
+
+/* CARD */
+.card{background:#fff;border-radius:11px;padding:13px;box-shadow:0 1px 5px rgba(27,43,75,.07);margin-bottom:11px}
+.ct{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:11px;display:flex;align-items:center;justify-content:space-between}
+.ct-lft{display:flex;align-items:center;gap:6px}
+.ir{display:flex;justify-content:space-between;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--slate)}
+.ir:last-child{border:none}
+.il{font-size:12px;color:#5A6880;flex-shrink:0;padding-right:8px}
+.iv{font-size:12.5px;font-weight:700;color:var(--navy);text-align:right}
+.iv.g{color:var(--green)}.iv.r{color:var(--red)}.iv.o{color:var(--orange)}.iv.b{color:var(--blue)}
+
+/* CHIP */
+.ch{display:inline-flex;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px}
+.chg{background:#E8F8F1;color:var(--green)}.chr{background:#FDEDEC;color:var(--red)}
+.cho{background:#FEF9E7;color:var(--orange)}.chb{background:#EEF2FF;color:var(--blue)}
+
+/* FILTER ROW */
+.frow{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;gap:8px}
+.frow-t{font-size:13px;font-weight:700;color:var(--navy);flex-shrink:0}
+.fsel{font-size:11.5px;padding:5px 9px;border:1.5px solid var(--brd);border-radius:7px;font-family:'Inter',sans-serif;outline:none;background:#fff;color:var(--navy)}
+
+/* FAKTURA ITEM */
+.fi{background:#fff;border-radius:11px;padding:11px 13px;margin-bottom:7px;box-shadow:0 1px 5px rgba(27,43,75,.07);display:flex;align-items:flex-start;gap:10px}
+.fi-ic{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:1px}
+.fi-inf{flex:1;min-width:0}
+.fi-br{font-size:12.5px;font-weight:700;color:var(--navy)}
+.fi-kl{font-size:11.5px;color:#5A6880;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fi-dt{font-size:11px;color:#96A3B5;margin-top:3px;font-weight:500;line-height:1.5}
+.fi-r{text-align:right;flex-shrink:0}
+.fi-iz{font-size:13px;font-weight:800;color:var(--navy)}
+
+/* KPO ITEM */
+.ki{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-bottom:1px solid var(--slate)}
+.ki:last-child{border:none}
+.kdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.k-inf{flex:1;min-width:0}
+.k-op{font-size:13px;font-weight:600;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.k-kl{font-size:11.5px;color:#5A6880;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.k-dt{font-size:11px;color:#96A3B5;margin-top:3px;font-weight:500}
+.k-iz{font-size:13px;font-weight:700;flex-shrink:0;text-align:right}
+
+/* IZVOD ITEM */
+.izv-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--slate)}
+.izv-item:last-child{border:none}
+.izv-inf{flex:1}
+.izv-op{font-size:12px;color:var(--navy);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.izv-dt{font-size:10.5px;color:#96A3B5;margin-top:2px}
+.izv-iz{font-size:13px;font-weight:700;flex-shrink:0}
+
+/* TROSKOVNIK */
+.tr-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--slate)}
+.tr-item:last-child{border:none}
+.tr-ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.tr-nm{font-size:12.5px;font-weight:600;color:var(--navy);flex:1}
+.tr-iz{font-size:13px;font-weight:700;color:var(--red);flex-shrink:0}
+
+/* CHAT */
+.chat-wrap{display:flex;flex-direction:column;height:calc(100vh - 185px);min-height:400px}
+.cmsg{flex:1;overflow-y:auto;padding-bottom:8px;display:flex;flex-direction:column;gap:9px}
+.cmsg::-webkit-scrollbar{display:none}
+.mg{display:flex;flex-direction:column}
+.mg.me{align-items:flex-end}.mg.ag{align-items:flex-start}
+.mr{display:flex;align-items:flex-end;gap:6px}
+.mg.me .mr{flex-direction:row-reverse}
+.av{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+.av.ag{background:var(--gold);color:var(--navy)}.av.me{background:var(--navy);color:#fff}
+.bbl{max-width:260px;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.5}
+.bbl.ag{background:#fff;color:var(--navy);border-radius:3px 14px 14px 14px;box-shadow:0 1px 5px rgba(27,43,75,.09)}
+.bbl.me{background:var(--navy);color:#fff;border-radius:14px 14px 3px 14px}
+.mt{font-size:10px;color:#96A3B5;padding:0 3px;margin-top:2px}
+.suggs{display:flex;gap:6px;overflow-x:auto;padding:7px 0 3px;flex-shrink:0}
+.suggs::-webkit-scrollbar{display:none}
+.sug{padding:6px 11px;border-radius:20px;background:rgba(201,168,76,.1);border:1.5px solid rgba(201,168,76,.25);font-size:11px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;flex-shrink:0}
+.sug:active{background:var(--gold)}
+.cinp-row{display:flex;gap:7px;align-items:center;padding-top:8px;border-top:1px solid var(--brd);flex-shrink:0}
+.cinp{flex:1;padding:10px 13px;background:var(--slate);border:1.5px solid var(--brd);border-radius:12px;font-size:13.5px;font-family:'Inter',sans-serif;outline:none;color:var(--navy)}
+.cinp:focus{border-color:var(--gold);background:#fff}
+.sbtn{width:40px;height:40px;background:var(--navy);border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;flex-shrink:0}
+
+/* EMPTY */
+.empty{text-align:center;padding:32px 16px;color:#96A3B5}
+.empty-ic{font-size:34px;margin-bottom:8px}
+.empty-t{font-size:12.5px}
+
+/* YEAR TABS */
+.ytabs{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto}
+.ytabs::-webkit-scrollbar{display:none}
+.ytab{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;background:#fff;border:1.5px solid var(--brd);color:#5A6880;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.ytab.active{background:var(--navy);border-color:var(--navy);color:#fff}
+
+/* TOAST */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--navy);color:#fff;padding:9px 16px;border-radius:11px;font-size:12.5px;font-weight:600;opacity:0;transition:all .3s;z-index:999;pointer-events:none;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,.2)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.section-title{font-size:11px;font-weight:700;color:#96A3B5;text-transform:uppercase;letter-spacing:.6px;margin:14px 0 7px}
+
+/* POREZI CARDS */
+.por-item{display:flex;align-items:center;gap:11px;padding:13px;background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(27,43,75,.07);margin-bottom:9px}
+.por-ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.por-inf{flex:1}
+.por-nm{font-size:12.5px;font-weight:700;color:var(--navy)}
+.por-sub{font-size:11px;color:#96A3B5;margin-top:2px}
+.por-val{text-align:right;flex-shrink:0}
+.por-stanje{font-size:14px;font-weight:800}
+.por-rok{font-size:10.5px;margin-top:2px;font-weight:600}
+
+/* KALENDAR */
+.kal-item{display:flex;align-items:center;gap:11px;padding:12px 13px;background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(27,43,75,.07);margin-bottom:8px;cursor:pointer;border-left:4px solid var(--brd)}
+.kal-item.hitno{border-left-color:var(--red)}
+.kal-item.skoro{border-left-color:var(--orange)}
+.kal-item.ok{border-left-color:var(--green)}
+.kal-date{width:44px;text-align:center;flex-shrink:0}
+.kal-dan{font-size:17px;font-weight:800;color:var(--navy);line-height:1}
+.kal-mes{font-size:9.5px;color:#96A3B5;text-transform:uppercase;font-weight:700;margin-top:2px}
+.kal-inf{flex:1;min-width:0}
+.kal-nm{font-size:12.5px;font-weight:700;color:var(--navy)}
+.kal-sub{font-size:11px;color:#5A6880;margin-top:2px}
+.kal-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;flex-shrink:0}
+
+/* POPUP */
+.popup-overlay{position:fixed;inset:0;background:rgba(27,43,75,.5);z-index:200;display:none;align-items:flex-end;justify-content:center}
+.popup-overlay.open{display:flex}
+.popup-sheet{background:#fff;border-radius:20px 20px 0 0;padding:20px;width:100%;max-width:440px;animation:slideUp .25s ease}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:none}}
+.popup-close{width:32px;height:32px;background:var(--slate);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;margin-left:auto}
+.popup-title{font-size:16px;font-weight:800;color:var(--navy);margin-bottom:14px}
+
+/* NOTIF BADGE */
+.tab-badge{background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:10px;padding:1px 5px;margin-left:4px}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="lcard">
+    <div class="l-ic">Ф</div>
+    <div class="l-title">Finity Portal</div>
+    <div class="l-sub">Vaš računovodstveni portal</div>
+    <div class="lf"><label>Vaša firma</label>
+      <select id="sel-firma">
+        <option value="">— Izaberite firmu —</option>
+        <option value="firma_1782402272290">M Centar Čistoće</option>
+        <option value="firma_1782402326844">NA Studio</option>
+        <option value="firma_1783351229437">ITK</option>
+        <option value="firma_1785518001802">Azzurro Plus</option>
+        <option value="firma_1785779319676">Azzurro</option>
+        <option value="firma_1785792886476">Tehnike Komunikacije</option>
+        <option value="firma_1785867223445">Marko Pantović Pr</option>
+      </select>
+    </div>
+    <div class="lf"><label>Lozinka</label><input type="password" id="inp-pass" placeholder="Unesite lozinku"></div>
+    <div class="lerr" id="lerr">Pogrešna firma ili lozinka.</div>
+    <button class="lbtn" onclick="prijavi()">Prijavite se →</button>
+    <div style="margin-top:12px;font-size:10.5px;color:#96A3B5;text-align:center">Lozinku vam daje vaš računovođa</div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header class="hdr" id="hdr">
+  <div class="hdr-l">
+    <div class="hdr-ic">Ф</div>
+    <div class="hdr-nm">Finity <span>Portal</span></div>
+  </div>
+  <div class="hdr-r">
+    <div>
+      <div class="hdr-firma" id="hdr-naziv">—</div>
+      <div class="hdr-sub" id="hdr-pib">—</div>
+    </div>
+    <button class="out-btn" onclick="odjavi()">Izlaz</button>
+  </div>
+</header>
+
+<!-- SYNC BAR -->
+<div class="sbar" id="sbar">
+  <div class="sdot wait" id="sdot"></div>
+  <span class="stxt" id="stxt">Učitavam...</span>
+  <span class="stime" id="stime"></span>
+</div>
+
+<!-- APP -->
+<div id="app">
+<div class="wrap">
+  <div class="tabs" id="tabs">
+    <div class="tab active" onclick="tab('pregled',this)">📊 Pregled</div>
+    <div class="tab" onclick="tab('fakture',this)">📄 Fakture</div>
+    <div class="tab" onclick="tab('kpo',this)">📖 KPO</div>
+    <div class="tab" onclick="tab('troskovnik',this)">💸 Troškovi</div>
+    <div class="tab" onclick="tab('izvodi',this)">🏦 Izvodi</div>
+    <div class="tab" onclick="tab('poreska',this)">🏛️ Poreska uprava</div>
+    <div class="tab" onclick="tab('kalendar',this)">📅 Kalendar</div>
+    <div class="tab" onclick="tab('chat',this)">💬 Chat</div>
+  </div>
+
+  <!-- ═══ PREGLED ═══ -->
+  <div id="t-pregled">
+    <div class="sg">
+      <div class="st nv">
+        <div class="st-ic">💰</div>
+        <div class="st-v" id="s-prihod">—</div>
+        <div class="st-l">Prihod KPO (RSD)</div>
+      </div>
+      <div class="st">
+        <div class="st-ic">🏦</div>
+        <div class="st-v" id="s-stanje">—</div>
+        <div class="st-l">Stanje računa (RSD)</div>
+      </div>
+      <div class="st">
+        <div class="st-ic">📄</div>
+        <div class="st-v" id="s-fak">—</div>
+        <div class="st-l">Faktura ukupno</div>
+      </div>
+      <div class="st">
+        <div class="st-ic">📖</div>
+        <div class="st-v" id="s-kpo">—</div>
+        <div class="st-l">KPO zapisa</div>
+      </div>
+    </div>
+
+    <!-- PRAGOVI -->
+    <div class="section-title">⚠️ Pragovi PDV</div>
+    <div class="prag-card">
+      <div class="prag-row">
+        <div class="prag-head">
+          <span class="prag-lbl">Paušalni prag — 6.000.000 RSD</span>
+          <span class="prag-val" id="prag6-val" style="color:var(--orange)">—</span>
+        </div>
+        <div class="prag-bar-bg"><div class="prag-bar-fill" id="prag6-bar" style="background:var(--orange);width:0%"></div></div>
+        <div class="prag-note" id="prag6-note">—</div>
+      </div>
+      <div class="prag-row">
+        <div class="prag-head">
+          <span class="prag-lbl">PDV prag — 8.000.000 RSD</span>
+          <span class="prag-val" id="prag8-val" style="color:var(--red)">—</span>
+        </div>
+        <div class="prag-bar-bg"><div class="prag-bar-fill" id="prag8-bar" style="background:var(--red);width:0%"></div></div>
+        <div class="prag-note" id="prag8-note">—</div>
+      </div>
+    </div>
+
+    <!-- OČEKIVANI PRILIVI -->
+    <div class="section-title">⏳ Očekivani prilivi (nedospele/neizmirene fakture)</div>
+    <div class="card" style="padding:11px 13px">
+      <div id="prilivi-list"></div>
+    </div>
+
+    <!-- FIRMA + RAČUNOVOĐA — kompaktno u jednoj kartici -->
+    <div class="section-title">🏢 Firma i računovođa</div>
+    <div class="card">
+      <div class="ir"><span class="il">Naziv</span><span class="iv" id="i-naziv">—</span></div>
+      <div class="ir"><span class="il">PIB / MB</span><span class="iv" id="i-pibmb">—</span></div>
+      <div class="ir"><span class="il">Delatnost</span><span class="iv" id="i-sd">—</span></div>
+      <div class="ir"><span class="il">Forma</span><span class="iv" id="i-forma">—</span></div>
+      <div class="ir"><span class="il">Direktor</span><span class="iv" id="i-dir">—</span></div>
+      <div class="ir"><span class="il">Adresa</span><span class="iv" id="i-adresa">—</span></div>
+      <div class="ir"><span class="il">Banka / Račun</span><span class="iv b" id="i-ziro" style="font-size:11px;word-break:break-all">—</span></div>
+      <div class="ir"><span class="il">Kontakt firme</span><span class="iv" id="i-kontakt" style="font-size:11px">—</span></div>
+      <div class="ir"><span class="il">PDV obveznik</span><span class="iv" id="i-pdv">—</span></div>
+      <div class="ir" style="border-top:1.5px solid var(--brd);margin-top:4px;padding-top:10px">
+        <span class="il">📊 Vaš računovođa</span><span class="iv g">Finity Knjigovodstvo</span>
+      </div>
+      <div class="ir"><span class="il">Kontakt</span><span class="iv" style="font-size:11px">0645445093 · finity.knjigovodstvu@gmail.com</span></div>
+      <div class="ir"><span class="il">Ažurirano</span><span class="iv" id="i-sync" style="font-size:10.5px">—</span></div>
+    </div>
+  </div>
+
+  <!-- ═══ FAKTURE ═══ -->
+  <div id="t-fakture" style="display:none">
+    <div style="background:#EEF2FF;border:1px solid #D6DEFF;border-radius:10px;padding:9px 12px;margin-bottom:11px;font-size:11.5px;color:#3B4B8C;line-height:1.5">
+      ℹ️ Prikazane su samo fakture izdate <strong>kroz Finity aplikaciju</strong>. Fakture izdate van programa ovde se ne vide.
+    </div>
+    <div class="frow">
+      <div class="frow-t" id="fak-br">Fakture</div>
+      <select class="fsel" id="fak-fil" onchange="renderFakture()">
+        <option value="sve">Sve</option>
+        <option value="izdata">Izdate</option>
+        <option value="placena">Plaćene</option>
+        <option value="neplacena">Neplaćene</option>
+        <option value="storno">Storno</option>
+      </select>
+    </div>
+    <div id="fak-list"></div>
+  </div>
+
+  <!-- ═══ KPO ═══ -->
+  <div id="t-kpo" style="display:none">
+    <div class="frow">
+      <div class="frow-t">KPO knjiga</div>
+      <select class="fsel" id="kpo-year" onchange="renderKPO()">
+        <option value="sve">Sve godine</option>
+      </select>
+    </div>
+    <div class="sg" style="margin-bottom:11px">
+      <div class="st"><div class="st-ic">💰</div><div class="st-v g" id="kpo-prihod">—</div><div class="st-l">Ukupni prihod</div></div>
+      <div class="st"><div class="st-ic">📝</div><div class="st-v" id="kpo-br">—</div><div class="st-l">Broj zapisa</div></div>
+    </div>
+    <div class="card" style="padding:11px 13px">
+      <div id="kpo-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══ TROSKOVNIK ═══ -->
+  <div id="t-troskovnik" style="display:none">
+    <div class="card" style="margin-bottom:11px">
+      <div class="st-ic">💸</div>
+      <div class="st-v r" id="tr-ukupno" style="font-size:24px">—</div>
+      <div class="st-l">Ukupni troškovi (iz izvoda)</div>
+    </div>
+    <div class="section-title">💸 Troškovi po kategoriji</div>
+    <div class="card" style="padding:11px 13px"><div id="tr-kat"></div></div>
+    <div class="section-title">📋 Poslednje stavke troškova</div>
+    <div class="card" style="padding:11px 13px"><div id="tr-stavke"></div></div>
+  </div>
+
+  <!-- ═══ IZVODI ═══ -->
+  <div id="t-izvodi" style="display:none">
+    <div class="sg">
+      <div class="st nv"><div class="st-ic">🏦</div><div class="st-v" id="izv-stanje">—</div><div class="st-l">Trenutno stanje</div></div>
+      <div class="st"><div class="st-ic">📋</div><div class="st-v" id="izv-br">—</div><div class="st-l">Poslednji izvod br.</div></div>
+    </div>
+    <div id="izv-lista"></div>
+  </div>
+
+  <!-- ═══ POREZI/DOPRINOSI ═══ -->
+  <div id="t-poreska" style="display:none">
+    <div id="poreska-readonly">
+      <div id="poreska-list"></div>
+    </div>
+    <!-- Admin panel — sakriven, otvara se lozinkom -->
+    <div class="card" style="margin-top:8px">
+      <div class="ct" style="cursor:pointer" onclick="togglePoreskaAdmin()">
+        <div class="ct-lft">🔒 Ažuriranje stanja (za računovođu)</div>
+        <span style="font-size:11px;color:var(--gold)">Otvori ▾</span>
+      </div>
+      <div id="poreska-admin" style="display:none">
+        <div class="lf" style="margin-top:6px"><label>Admin lozinka</label><input type="password" id="poreska-pass" placeholder="Lozinka računovođe"></div>
+        <div id="poreska-form"></div>
+        <button class="lbtn" style="margin-top:8px" onclick="sacuvajPoreska()">💾 Sačuvaj stanje</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ KALENDAR ═══ -->
+  <div id="t-kalendar" style="display:none">
+    <div class="section-title">📅 Predstojeće obaveze i dospeća</div>
+    <div id="kalendar-list"></div>
+  </div>
+
+  <!-- ═══ CHAT ═══ -->
+  <div id="t-chat" style="display:none">
+    <div class="chat-wrap">
+      <div class="cmsg" id="cmsg">
+        <div class="mg ag"><div class="mr"><div class="av ag">FK</div>
+          <div><div class="bbl ag">Zdravo! Ovde možete pisati zahteve vašem računovođi. Odgovaramo brzo! 👋</div>
+          <div class="mt">Finity Knjigovodstvo</div></div></div></div>
+      </div>
+      <div class="suggs">
+        <div class="sug" onclick="qm('Kada mi ističe rok za uplatu poreza?')">⏰ Rok poreza</div>
+        <div class="sug" onclick="qm('Možete li napraviti novu fakturu?')">📄 Nova faktura</div>
+        <div class="sug" onclick="qm('Koliki je moj prihod za ovaj mesec?')">💰 Prihod</div>
+        <div class="sug" onclick="qm('Trebaju mi dokumenti za banku.')">🏦 Za banku</div>
+        <div class="sug" onclick="qm('Imam pitanje o PDV pragu.')">⚠️ PDV prag</div>
+        <div class="sug" onclick="qm('Možete li mi poslati poslednje izvode?')">📋 Izvodi</div>
+      </div>
+      <div class="cinp-row">
+        <input class="cinp" id="cinp" placeholder="Napišite zahtev..." onkeypress="if(event.key==='Enter')posalji()">
+        <div class="sbtn" onclick="posalji()">➤</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- POPUP ZA KALENDAR STAVKU -->
+<div class="popup-overlay" id="popup-overlay" onclick="if(event.target===this)zatvoriPopup()">
+  <div class="popup-sheet">
+    <div style="display:flex;align-items:center">
+      <div class="popup-title" id="popup-title" style="margin-bottom:0">Detalji</div>
+      <div class="popup-close" onclick="zatvoriPopup()">✕</div>
+    </div>
+    <div id="popup-body"></div>
+  </div>
+</div>
+
+<script>
+const SERVER = 'https://web-production-c132b.up.railway.app';
+const ADMIN_LOZINKA = 'racunovodja2026'; // menjajte po potrebi
+const VAŠ_EMAIL = 'finity.knjigovodstvu@gmail.com';
+
+const LOZINKE = {
+  'firma_1782402272290':'mcenatar2026',
+  'firma_1782402326844':'nastudio2026',
+  'firma_1783351229437':'itk2026',
+  'firma_1785518001802':'azzurroplus2026',
+  'firma_1785779319676':'azzurro2026',
+  'firma_1785792886476':'tehnike2026',
+  'firma_1785867223445':'marko2026',
+};
+
+const FIRME_INFO = {
+  'firma_1782402272290':{naziv:'M Centar Čistoće',pib:'115727534',forma:'Paušalac'},
+  'firma_1782402326844':{naziv:'NA Studio',pib:'115619196',forma:'Paušalac'},
+  'firma_1783351229437':{naziv:'ITK',pib:'113634417',forma:'DOO'},
+  'firma_1785518001802':{naziv:'Azzurro Plus',pib:'114434142',forma:'Paušalac'},
+  'firma_1785779319676':{naziv:'Azzurro',pib:'112183514',forma:'Paušalac'},
+  'firma_1785792886476':{naziv:'Tehnike Komunikacije',pib:'114581758',forma:'Paušalac'},
+  'firma_1785867223445':{naziv:'Marko Pantović Pr',pib:'112038794',forma:'Paušalac'},
+};
+
+let firma = null;
+let pd = {fakture:[],kpo:[],izv:[],potrazivanja:[],naplate:[],settings:{}};
+
+// ── LOGIN ──
+function prijavi(){
+  const fid = document.getElementById('sel-firma').value;
+  const pass = document.getElementById('inp-pass').value;
+  if(!fid){ toast('Izaberite firmu.'); return; }
+  if(LOZINKE[fid] !== pass){ document.getElementById('lerr').style.display='block'; return; }
+  firma = {id:fid, ...FIRME_INFO[fid]};
+  localStorage.setItem('fp_f', JSON.stringify(firma));
+  startApp();
+}
+
+function odjavi(){
+  localStorage.removeItem('fp_f'); firma=null;
+  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('hdr').style.display='none';
+  document.getElementById('sbar').style.display='none';
+  document.getElementById('app').style.display='none';
+}
+
+function startApp(){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('hdr').style.display='flex';
+  document.getElementById('sbar').style.display='flex';
+  document.getElementById('app').style.display='block';
+  document.getElementById('hdr-naziv').textContent = firma.naziv;
+  document.getElementById('hdr-pib').textContent = 'PIB ' + firma.pib;
+  ucitaj();
+  ucitajPoreska();
+  setInterval(ucitaj, 10000);
+  setInterval(ucitajPoreska, 30000);
+}
+
+window.addEventListener('load', () => {
+  const s = localStorage.getItem('fp_f');
+  if(s){ try{ firma=JSON.parse(s); startApp(); }catch(e){ localStorage.removeItem('fp_f'); } }
+});
+
+// ── UČITAJ ──
+async function ucitaj(){
+  try{
+    const r = await fetch(SERVER+'/finity-sync',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({akcija:'load', token:'pausalpro2026'})
+    });
+    const j = await r.json();
+    if(!j.ok || !j.data) throw new Error('no data');
+
+    const keys = j.data.keys || j.data;
+    const kljuc = 'knjigo_rs_v41_' + firma.id;
+    let fd = keys[kljuc] || {};
+    if(typeof fd==='string'){ try{ fd=JSON.parse(fd); }catch(e){ fd={}; } }
+
+    pd.fakture     = fd.fakture     || [];
+    pd.kpo         = fd.kpo         || [];
+    pd.izv         = fd.izv         || [];
+    pd.potrazivanja= fd.potrazivanja|| [];
+    pd.naplate     = fd.naplate     || [];
+    pd.settings    = fd.settings    || {};
+    pd.troskoviRucni = fd.troskoviRucni || [];
+
+    let firme = keys['knjigo_firme'] || [];
+    if(typeof firme==='string'){ try{ firme=JSON.parse(firme); }catch(e){ firme=[]; } }
+    const f = firme.find(x => x.id === firma.id);
+    if(f) Object.assign(pd.settings, f);
+
+    renderAll();
+    document.getElementById('sdot').className='sdot ok';
+    document.getElementById('stxt').textContent='Podaci ažurni';
+    document.getElementById('stime').textContent=new Date().toLocaleTimeString('sr-RS');
+    document.getElementById('i-sync').textContent=new Date().toLocaleString('sr-RS');
+  } catch(e){
+    document.getElementById('sdot').className='sdot err';
+    document.getElementById('stxt').textContent='Greška pri učitavanju';
+  }
+}
+
+function renderAll(){ popuniGodine(); renderPregled(); renderFakture(); renderKPO(); renderTroskovnik(); renderIzvodi(); renderPoreska(); renderKalendar(); proveriNoveFakture(); }
+
+function popuniGodine(){
+  const godine = [...new Set(pd.kpo.map(k=>(k.dat||'').slice(0,4)).filter(g=>g.length===4))].sort().reverse();
+  const sel = document.getElementById('kpo-year');
+  const trenutna = sel.value;
+  sel.innerHTML = '<option value="sve">Sve godine</option>' + godine.map(g=>`<option value="${g}">${g}</option>`).join('');
+  if(godine.includes(trenutna) || trenutna==='sve') sel.value = trenutna;
+}
+
+// ── PREGLED ──
+function renderPregled(){
+  const s = pd.settings;
+  const kpo = pd.kpo;
+  const prihod = kpo.reduce((a,k)=>a+parseFloat(k.iz||k.uk||0),0);
+  const izv = pd.izv;
+  const stanje = izv.length ? parseFloat(izv[izv.length-1].ns||0) : 0;
+  const placene = pd.fakture.filter(f=>(f.status||'').toLowerCase()==='placena').length;
+
+  document.getElementById('s-prihod').textContent = fmt(prihod);
+  document.getElementById('s-stanje').textContent = fmt(stanje);
+  document.getElementById('s-fak').textContent    = pd.fakture.length;
+  document.getElementById('s-kpo').textContent    = kpo.length;
+
+  // PRAGOVI — ista logika kao Finity: paušalni prag po kalendarskoj godini, PDV prag kroz klizni prozor 365 dana
+  const now = new Date();
+  const godina = now.getFullYear();
+  const pocGod = new Date(godina,0,1);
+  const krajGod = new Date(godina,11,31,23,59,59);
+  const pre365 = new Date(now); pre365.setDate(pre365.getDate()-365);
+
+  let prometGod = 0, promet365 = 0;
+  kpo.forEach(k=>{
+    const d = new Date(k.dat);
+    if(isNaN(d)) return;
+    const iznos = parseFloat(k.iz||k.uk||0);
+    if(d >= pocGod && d <= krajGod) prometGod += iznos;
+    if(d >= pre365 && d <= now) promet365 += iznos;
+  });
+
+  const p6 = Math.min(prometGod/6000000*100,100);
+  const p8 = Math.min(promet365/8000000*100,100);
+  document.getElementById('prag6-bar').style.width = p6+'%';
+  document.getElementById('prag8-bar').style.width = p8+'%';
+  document.getElementById('prag6-val').textContent = p6.toFixed(1)+'%';
+  document.getElementById('prag8-val').textContent = p8.toFixed(1)+'%';
+
+  const fmtD = d => d.toLocaleDateString('sr-RS');
+
+  if(prometGod >= 6000000){
+    document.getElementById('prag6-note').innerHTML = '<span style="color:var(--red);font-weight:600">⚠️ Premašen paušalni prag za '+godina+'. godinu!</span>';
+    document.getElementById('prag6-bar').style.background='var(--red)';
+  } else {
+    document.getElementById('prag6-note').textContent = `Promet od 1.1.${godina}: ${fmt(prometGod)} RSD · preostalo ${fmt(6000000-prometGod)} RSD`;
+  }
+  if(promet365 >= 8000000){
+    document.getElementById('prag8-note').innerHTML = '<span style="color:var(--red);font-weight:700">🚨 PDV OBAVEZA — prekoračen prag u poslednjih 365 dana!</span>';
+  } else {
+    document.getElementById('prag8-note').textContent = `Promet ${fmtD(pre365)}–${fmtD(now)}: ${fmt(promet365)} RSD · preostalo ${fmt(8000000-promet365)} RSD`;
+  }
+
+  // FIRMA INFO — kompaktnije spojeni podaci
+  const set = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v||'—'; };
+  set('i-naziv',  s.naziv||s.nazivPun);
+  set('i-pibmb',  (s.pib||'—') + ' / ' + (s.mb||'—'));
+  set('i-sd',     s.sd);
+  set('i-forma',  s.forma||s.tipPreduzeca);
+  set('i-dir',    s.direktor||s.ovlasceno);
+  set('i-adresa', (s.adresa||'') + (s.grad?', '+s.grad:''));
+  set('i-ziro',   (s.banka?s.banka+' · ':'') + (s.ziro||s.ziro2||'—'));
+  set('i-kontakt',(s.tel?s.tel:'') + (s.tel&&s.email?' · ':'') + (s.email||''));
+  document.getElementById('i-pdv').innerHTML = s.pdv==='da'
+    ? '<span class="ch chg">✅ Da</span>'
+    : '<span class="ch chr">Ne</span>';
+
+  // OČEKIVANI PRILIVI — nedospele/neizmirene fakture, sortirane po roku
+  const naplaceno2 = izracunajStatuse();
+  const nedospele = pd.fakture
+    .filter(f => (f.status||'').toLowerCase()!=='storno')
+    .map(f => ({f, st: statusZaBroj(f.br, parseFloat(f.ukupno||0), naplaceno2)}))
+    .filter(x => x.st.cls!=='ok')
+    .sort((a,b)=>(a.f.valuta||'').localeCompare(b.f.valuta||''));
+
+  const prilivEl = document.getElementById('prilivi-list');
+  if(!nedospele.length){
+    prilivEl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-ic">✅</div><div class="empty-t">Sve fakture su izmirene</div></div>';
+  } else {
+    const danas = new Date().toISOString().slice(0,10);
+    prilivEl.innerHTML = nedospele.slice(0,10).map(({f,st})=>{
+      const kasni = f.valuta && f.valuta < danas;
+      const preostalo = st.ostatak != null ? st.ostatak : parseFloat(f.ukupno||0);
+      return `<div class="ir">
+        <span class="il">${f.br} · ${f.klijentNaziv||'—'}<br><span style="font-size:10px">${kasni?'⏰ Kasni od '+srpD(f.valuta):'Dospeva '+srpD(f.valuta)}</span></span>
+        <span class="iv ${kasni?'r':'o'}">${fmt(preostalo)} RSD</span>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── STATUS IZMIRENJA (ista logika kao Finity: potraživanja - naplate po broju) ──
+function izracunajStatuse(){
+  // Mapa: broj → ukupno naplaćeno
+  const naplaceno = {};
+  for(const n of pd.naplate){
+    const br = n.faktBr || '';
+    if(!br) continue;
+    naplaceno[br] = (naplaceno[br]||0) + parseFloat(n.iznos||0);
+  }
+  return naplaceno;
+}
+
+function statusZaBroj(br, ukupanIznos, naplaceno){
+  const placeno = naplaceno[br] || 0;
+  const ostatak = Math.round((ukupanIznos - placeno)*100)/100;
+  if(ostatak <= 0.5) return {label:'Izmireno', cls:'ok', placeno};
+  if(placeno > 0.5) return {label:'Delimično', cls:'part', placeno, ostatak};
+  return {label:'Neizmireno', cls:'no', placeno:0, ostatak};
+}
+
+// ── FAKTURE ──
+function renderFakture(){
+  const fil = document.getElementById('fak-fil').value;
+  const naplaceno = izracunajStatuse();
+  let lista = [...pd.fakture].sort((a,b)=> (b.datum||'').localeCompare(a.datum||'') || (b.br||'').localeCompare(a.br||''));
+
+  if(fil==='izdata')   lista=lista.filter(f=>(f.status||'').toLowerCase()==='izdata');
+  else if(fil==='placena')  lista=lista.filter(f=> statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno).cls==='ok' && (f.status||'').toLowerCase()!=='storno');
+  else if(fil==='neplacena')lista=lista.filter(f=> statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno).cls!=='ok' && (f.status||'').toLowerCase()!=='storno');
+  else if(fil==='storno')  lista=lista.filter(f=>(f.status||'').toLowerCase()==='storno');
+
+  document.getElementById('fak-br').textContent=`Fakture (${lista.length})`;
+  if(!lista.length){ document.getElementById('fak-list').innerHTML='<div class="empty"><div class="empty-ic">📄</div><div class="empty-t">Nema faktura za ovaj filter</div></div>'; return; }
+
+  document.getElementById('fak-list').innerHTML=lista.slice(0,60).map(f=>{
+    const iz=parseFloat(f.ukupno||0);
+    const jeStorno = (f.status||'').toLowerCase()==='storno';
+    const st = statusZaBroj(f.br, iz, naplaceno);
+    let chip,bg,ic;
+    if(jeStorno){ chip='<span class="ch chr">⛔ Storno</span>';bg='#FDEDEC';ic='⛔'; }
+    else if(st.cls==='ok'){ chip='<span class="ch chg">✅ Izmirena</span>';bg='#E8F8F1';ic='✅'; }
+    else if(st.cls==='part'){ chip=`<span class="ch cho">◐ Delimično (${fmt(st.placeno)})</span>`;bg='#FEF9E7';ic='◐'; }
+    else { chip='<span class="ch cho">⏳ Neizmirena</span>';bg='#FEF9E7';ic='⏳'; }
+
+    return `<div class="fi">
+      <div class="fi-ic" style="background:${bg}">${ic}</div>
+      <div class="fi-inf">
+        <div class="fi-br">${f.br||'—'}</div>
+        <div class="fi-kl">${f.klijentNaziv||'—'}</div>
+        <div class="fi-dt">📅 ${srpD(f.datum)} &nbsp;→&nbsp; ⏰ ${srpD(f.valuta)}</div>
+      </div>
+      <div class="fi-r">
+        <div class="fi-iz">${fmt(iz)} RSD</div>
+        <div>${chip}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── KPO ──
+function renderKPO(){
+  const year = document.getElementById('kpo-year').value;
+  const naplaceno = izracunajStatuse();
+  let lista = [...pd.kpo].sort((a,b)=> (b.dat||'').localeCompare(a.dat||'') || (b.rb||0)-(a.rb||0));
+  if(year!=='sve') lista=lista.filter(k=>(k.dat||'').startsWith(year));
+
+  const prihod = lista.reduce((a,k)=>a+parseFloat(k.iz||k.uk||0),0);
+  document.getElementById('kpo-prihod').textContent=fmt(prihod)+' RSD';
+  document.getElementById('kpo-br').textContent=lista.length;
+
+  if(!lista.length){ document.getElementById('kpo-list').innerHTML='<div class="empty"><div class="empty-ic">📖</div><div class="empty-t">Nema KPO zapisa</div></div>'; return; }
+
+  document.getElementById('kpo-list').innerHTML=lista.slice(0,60).map(k=>{
+    const iz=parseFloat(k.iz||k.uk||0);
+    const jeStorno = (k.vrsta||'')==='Storno fakture' || iz<0;
+    const st = statusZaBroj(k.br, iz, naplaceno);
+    let statusHtml, dotColor;
+    if(jeStorno){ statusHtml='<span style="color:#96A3B5">⛔ Storno</span>'; dotColor='#96A3B5'; }
+    else if(st.cls==='ok'){ statusHtml='<span style="color:var(--green)">✅ Izmireno</span>'; dotColor='var(--green)'; }
+    else if(st.cls==='part'){ statusHtml=`<span style="color:var(--orange)">◐ Delimično (${fmt(st.placeno)})</span>`; dotColor='var(--orange)'; }
+    else{ statusHtml='<span style="color:var(--orange)">⏳ Neizmireno</span>'; dotColor='var(--orange)'; }
+
+    return `<div class="ki">
+      <div class="kdot" style="background:${dotColor}"></div>
+      <div class="k-inf">
+        <div class="k-op">${k.opis||k.vrsta||'—'}</div>
+        <div class="k-kl">👤 ${k.kl||'—'} &nbsp;·&nbsp; Br: ${k.br||'—'}</div>
+        <div class="k-dt">📅 ${srpD(k.dat)} &nbsp;·&nbsp; ${statusHtml}</div>
+      </div>
+      <div class="k-iz" style="color:${iz<0?'var(--red)':'var(--green)'}">${iz<0?'':'+'}${fmt(iz)} RSD</div>
+    </div>`;
+  }).join('');
+}
+
+// ── TROSKOVNIK ──
+function renderTroskovnik(){
+  // Pokupi troškove iz stavki izvoda — koristi TAČNO polje trosakTip (isto kao Finity)
+  const kategorije = {};
+  let ukupno = 0;
+  const stavke = [];
+
+  for(const izvod of pd.izv){
+    for(const st of (izvod.stavke||[])){
+      const iznos = parseFloat(st.iznos||0);
+      if(iznos < 0){
+        const ap = Math.abs(iznos);
+        ukupno += ap;
+        const kat = (st.trosakTip||'').trim() || 'Bez kategorije';
+        kategorije[kat] = (kategorije[kat]||0) + ap;
+        stavke.push({opis:st.opis||'—', iznos:ap, datum:st.datum||izvod.d||'—', kat});
+      }
+    }
+  }
+
+  // Dodaj ručne troškove ako postoje
+  for(const tr of pd.troskoviRucni||[]){
+    const ap = parseFloat(tr.iznos||0);
+    ukupno += ap;
+    const kat = tr.trosakTip||tr.tip||tr.kategorija||'Bez kategorije';
+    kategorije[kat] = (kategorije[kat]||0) + ap;
+    stavke.push({opis:tr.opis||'—', iznos:ap, datum:tr.datum||'—', kat});
+  }
+
+  const prihod = pd.kpo.reduce((a,k)=>a+parseFloat(k.iz||k.uk||0),0);
+  document.getElementById('tr-ukupno').textContent = fmt(ukupno)+' RSD';
+  document.getElementById('tr-neto').textContent   = fmt(prihod-ukupno)+' RSD';
+
+  // Kategorije
+  const katSorted = Object.entries(kategorije).sort((a,b)=>b[1]-a[1]);
+  const ICONS = {'Bankarske provizije':'🏦','Porezi i doprinosi':'🏛️','Porez na prihod':'🏛️','Doprinos PIO':'👴','Doprinos zdravstvo':'🏥',
+    'Doprinos nezaposlenost':'🛡️','Podizanje dobiti':'💵','Dobavljači':'🛒','Zakup':'🏠','Ostalo':'📦','Bez kategorije':'❔'};
+
+  document.getElementById('tr-kat').innerHTML = katSorted.length===0
+    ? '<div class="empty"><div class="empty-ic">💸</div><div class="empty-t">Nema evidentiranih troškova</div></div>'
+    : katSorted.map(([k,v])=>`<div class="tr-item">
+        <div class="tr-ic" style="background:var(--slate)">${ICONS[k]||'📦'}</div>
+        <div class="tr-nm">${k}</div>
+        <div class="tr-iz">${fmt(v)} RSD</div>
+      </div>`).join('');
+
+  // Poslednje stavke
+  const stavkeSorted = stavke.sort((a,b)=>b.datum.localeCompare(a.datum)).slice(0,20);
+  document.getElementById('tr-stavke').innerHTML = stavkeSorted.length===0
+    ? '<div class="empty-t" style="color:#96A3B5;text-align:center;padding:12px">Nema stavki</div>'
+    : stavkeSorted.map(s=>`<div class="ki">
+        <div class="kdot" style="background:var(--red)"></div>
+        <div class="k-inf">
+          <div class="k-op">${s.opis.length>60?s.opis.substring(0,60)+'...':s.opis}</div>
+          <div class="k-dt">📅 ${srpD(s.datum)} &nbsp;·&nbsp; ${s.kat}</div>
+        </div>
+        <div class="k-iz" style="color:var(--red)">−${fmt(s.iznos)} RSD</div>
+      </div>`).join('');
+}
+
+// ── IZVODI ──
+function renderIzvodi(){
+  const izv = pd.izv;
+  if(!izv.length){
+    document.getElementById('izv-stanje').textContent='—';
+    document.getElementById('izv-br').textContent='—';
+    document.getElementById('izv-lista').innerHTML='<div class="empty"><div class="empty-ic">🏦</div><div class="empty-t">Nema uvezenih izvoda</div></div>';
+    return;
+  }
+  const last = izv[izv.length-1];
+  document.getElementById('izv-stanje').textContent=fmt(last.ns||0)+' RSD';
+  document.getElementById('izv-br').textContent=last.bn||'—';
+
+  document.getElementById('izv-lista').innerHTML=[...izv].sort((a,b)=>(b.d||'').localeCompare(a.d||'')).slice(0,15).map(izv=>{
+    const stavke = izv.stavke||[];
+    const prihodi = stavke.filter(s=>parseFloat(s.iznos||0)>0).reduce((a,s)=>a+parseFloat(s.iznos),0);
+    const rashodi = stavke.filter(s=>parseFloat(s.iznos||0)<0).reduce((a,s)=>a+Math.abs(parseFloat(s.iznos)),0);
+    return `<div class="card" style="padding:13px">
+      <div class="ct">
+        <div class="ct-lft">🏦 Izvod br. ${izv.bn||'—'}</div>
+        <span class="ch chb">${srpD(izv.d)}</span>
+      </div>
+      <div class="ir"><span class="il">Banka</span><span class="iv">${izv.bk||'—'}</span></div>
+      <div class="ir"><span class="il">Broj računa</span><span class="iv b" style="font-size:10.5px">${izv.ra||'—'}</span></div>
+      <div class="ir"><span class="il">Krajnje stanje</span><span class="iv g">${fmt(izv.ns||0)} RSD</span></div>
+      <div class="ir"><span class="il">Prilivi</span><span class="iv g">+${fmt(prihodi)} RSD</span></div>
+      <div class="ir"><span class="il">Odlivi</span><span class="iv r">−${fmt(rashodi)} RSD</span></div>
+      <div class="ir"><span class="il">Stavki</span><span class="iv">${stavke.length}</span></div>
+    </div>`;
+  }).join('');
+}
+
+// ── TABS ──
+function tab(id,el){
+  ['pregled','fakture','kpo','troskovnik','izvodi','poreska','kalendar','chat'].forEach(t=>{ const e=document.getElementById('t-'+t); if(e) e.style.display='none'; });
+  document.getElementById('t-'+id).style.display='block';
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  if(id==='fakture') localStorage.setItem('fp_seen_'+firma.id, pd.fakture.length);
+  if(id==='chat') setTimeout(()=>{ const m=document.getElementById('cmsg'); m.scrollTop=m.scrollHeight; },100);
+}
+
+// ── NOVE FAKTURE — notifikacija ──
+function proveriNoveFakture(){
+  const seenKey = 'fp_seen_'+firma.id;
+  const seen = parseInt(localStorage.getItem(seenKey) || pd.fakture.length);
+  const novih = pd.fakture.length - seen;
+  const fakTab = document.querySelectorAll('.tab')[1];
+  const postojeciBadge = fakTab.querySelector('.tab-badge');
+  if(postojeciBadge) postojeciBadge.remove();
+  if(novih > 0){
+    fakTab.innerHTML += `<span class="tab-badge">${novih}</span>`;
+    if(!window._fpToastShown){
+      toast(`📄 ${novih} nova faktura izdata!`);
+      window._fpToastShown = true;
+    }
+  }
+}
+
+// ── POREZI I DOPRINOSI ──
+const POREZ_KATEGORIJE = [
+  {key:'pio', naziv:'Doprinos PIO', ic:'👴', bg:'#EEF2FF'},
+  {key:'zdravstvo', naziv:'Doprinos zdravstvo', ic:'🏥', bg:'#FEF2F2'},
+  {key:'nezaposlenost', naziv:'Doprinos nezaposlenost', ic:'🛡️', bg:'#F0FDF4'},
+  {key:'porez', naziv:'Porez na prihod (paušal)', ic:'🏛️', bg:'#FFFBEB'},
+];
+let poreskiPodaci = null;
+
+async function ucitajPoreska(){
+  try{
+    const r = await fetch(SERVER+'/porezi', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({akcija:'load', firma_id:firma.id})
+    });
+    const j = await r.json();
+    poreskiPodaci = j.ok ? j.data : null;
+  }catch(e){ poreskiPodaci = null; }
+  renderPoreska();
+}
+
+function renderPoreska(){
+  const el = document.getElementById('poreska-list');
+  if(!el) return;
+  if(!poreskiPodaci){
+    el.innerHTML = '<div class="empty"><div class="empty-ic">🏛️</div><div class="empty-t">Vaš računovođa još nije uneo stanje poreskih obaveza.</div></div>';
+    return;
+  }
+  el.innerHTML = POREZ_KATEGORIJE.map(k=>{
+    const d = poreskiPodaci[k.key] || {};
+    const stanje = parseFloat(d.stanje||0);
+    const rok = d.rok || '';
+    const danas = new Date().toISOString().slice(0,10);
+    let rokBoja = 'g', rokTxt = rok ? 'Rok: '+srpD(rok) : 'Rok nije unet';
+    if(rok && rok < danas){ rokBoja='r'; rokTxt='⏰ Kasni od '+srpD(rok); }
+    else if(rok){
+      const dana = Math.ceil((new Date(rok)-new Date(danas))/86400000);
+      if(dana<=7){ rokBoja='o'; rokTxt=`⏳ Za ${dana} dana — ${srpD(rok)}`; }
+    }
+    return `<div class="por-item">
+      <div class="por-ic" style="background:${k.bg}">${k.ic}</div>
+      <div class="por-inf">
+        <div class="por-nm">${k.naziv}</div>
+        <div class="por-sub">BOP: ${fmt(d.bop||0)} RSD</div>
+      </div>
+      <div class="por-val">
+        <div class="por-stanje" style="color:${stanje>0?'var(--red)':'var(--green)'}">${fmt(stanje)} RSD</div>
+        <div class="por-rok iv ${rokBoja}">${rokTxt}</div>
+      </div>
+    </div>`;
+  }).join('') + (poreskiPodaci.azurirano ? `<div style="text-align:center;font-size:10.5px;color:#96A3B5;margin-top:8px">Ažurirano: ${poreskiPodaci.azurirano}</div>` : '');
+}
+
+function togglePoreskaAdmin(){
+  const el = document.getElementById('poreska-admin');
+  const otvoren = el.style.display !== 'none';
+  el.style.display = otvoren ? 'none' : 'block';
+  if(!otvoren) renderPoreskaForm();
+}
+
+function renderPoreskaForm(){
+  const form = document.getElementById('poreska-form');
+  form.innerHTML = POREZ_KATEGORIJE.map(k=>{
+    const d = (poreskiPodaci && poreskiPodaci[k.key]) || {};
+    return `<div style="border-top:1px solid var(--brd);padding-top:10px;margin-top:10px">
+      <div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:6px">${k.ic} ${k.naziv}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="lf" style="margin-bottom:6px"><label>BOP</label><input type="number" id="pf-${k.key}-bop" value="${d.bop||0}"></div>
+        <div class="lf" style="margin-bottom:6px"><label>Stanje duga</label><input type="number" id="pf-${k.key}-stanje" value="${d.stanje||0}"></div>
+      </div>
+      <div class="lf"><label>Sledeći rok plaćanja</label><input type="date" id="pf-${k.key}-rok" value="${d.rok||''}"></div>
+    </div>`;
+  }).join('');
+}
+
+async function sacuvajPoreska(){
+  const pass = document.getElementById('poreska-pass').value;
+  if(pass !== ADMIN_LOZINKA){ toast('⚠️ Pogrešna admin lozinka.'); return; }
+
+  const payload = {};
+  POREZ_KATEGORIJE.forEach(k=>{
+    payload[k.key] = {
+      bop: parseFloat(document.getElementById(`pf-${k.key}-bop`).value||0),
+      stanje: parseFloat(document.getElementById(`pf-${k.key}-stanje`).value||0),
+      rok: document.getElementById(`pf-${k.key}-rok`).value||'',
+    };
+  });
+
+  try{
+    const r = await fetch(SERVER+'/porezi', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({akcija:'save', firma_id:firma.id, token:pass, data:payload})
+    });
+    const j = await r.json();
+    if(j.ok){
+      toast('✅ Sačuvano!');
+      poreskiPodaci = payload;
+      poreskiPodaci.azurirano = new Date().toLocaleString('sr-RS');
+      renderPoreska();
+      document.getElementById('poreska-admin').style.display='none';
+    } else {
+      toast('⚠️ '+(j.poruka||'Greška'));
+    }
+  }catch(e){ toast('⚠️ Greška pri čuvanju.'); }
+}
+
+// ── KALENDAR ──
+function renderKalendar(){
+  const el = document.getElementById('kalendar-list');
+  const danas = new Date().toISOString().slice(0,10);
+  const stavke = [];
+
+  // Poreske obaveze rokovi
+  if(poreskiPodaci){
+    POREZ_KATEGORIJE.forEach(k=>{
+      const d = poreskiPodaci[k.key];
+      if(d && d.rok){
+        stavke.push({datum:d.rok, naziv:k.naziv, tip:'porez', iznos:d.stanje, ic:k.ic});
+      }
+    });
+  }
+
+  // Fakture — dospeća neizmirenih
+  const naplaceno = izracunajStatuse();
+  pd.fakture.filter(f=>(f.status||'').toLowerCase()!=='storno').forEach(f=>{
+    const st = statusZaBroj(f.br, parseFloat(f.ukupno||0), naplaceno);
+    if(st.cls!=='ok' && f.valuta){
+      stavke.push({datum:f.valuta, naziv:'Faktura '+f.br+' — '+(f.klijentNaziv||''), tip:'faktura', iznos:st.ostatak!=null?st.ostatak:parseFloat(f.ukupno||0), ic:'📄'});
+    }
+  });
+
+  stavke.sort((a,b)=>a.datum.localeCompare(b.datum));
+
+  if(!stavke.length){
+    el.innerHTML = '<div class="empty"><div class="empty-ic">📅</div><div class="empty-t">Nema predstojećih obaveza ili dospeća</div></div>';
+    return;
+  }
+
+  const MESECI = ['JAN','FEB','MAR','APR','MAJ','JUN','JUL','AVG','SEP','OKT','NOV','DEC'];
+  el.innerHTML = stavke.map((s,i)=>{
+    const d = new Date(s.datum);
+    const kasni = s.datum < danas;
+    const dana = Math.ceil((d-new Date(danas))/86400000);
+    let cls='ok', badge=`za ${dana} d.`;
+    if(kasni){ cls='hitno'; badge='kasni'; }
+    else if(dana<=7){ cls='skoro'; badge=`za ${dana} d.`; }
+
+    return `<div class="kal-item ${cls}" onclick='otvoriPopup(${JSON.stringify(s).replace(/'/g,"&apos;")})'>
+      <div class="kal-date">
+        <div class="kal-dan">${d.getDate()}</div>
+        <div class="kal-mes">${MESECI[d.getMonth()]}</div>
+      </div>
+      <div class="kal-inf">
+        <div class="kal-nm">${s.ic} ${s.naziv}</div>
+        <div class="kal-sub">${fmt(s.iznos)} RSD</div>
+      </div>
+      <span class="kal-badge" style="background:${cls==='hitno'?'#FDEDEC':cls==='skoro'?'#FEF9E7':'#E8F8F1'};color:${cls==='hitno'?'var(--red)':cls==='skoro'?'var(--orange)':'var(--green)'}">${badge}</span>
+    </div>`;
+  }).join('');
+}
+
+function otvoriPopup(s){
+  document.getElementById('popup-title').textContent = s.tip==='porez' ? '🏛️ Poreska obaveza' : '📄 Dospeće fakture';
+  document.getElementById('popup-body').innerHTML = `
+    <div class="ir"><span class="il">Naziv</span><span class="iv">${s.naziv}</span></div>
+    <div class="ir"><span class="il">Iznos</span><span class="iv" style="font-size:16px">${fmt(s.iznos)} RSD</span></div>
+    <div class="ir"><span class="il">Datum</span><span class="iv">${srpD(s.datum)}</span></div>
+  `;
+  document.getElementById('popup-overlay').classList.add('open');
+}
+function zatvoriPopup(){ document.getElementById('popup-overlay').classList.remove('open'); }
+
+// ── CHAT ──
+const AUTO = [
+  'Primio sam vaš zahtev! Obradiću ga danas. 😊',
+  'Hvala! Proveravam i javljam u roku od sat vremena.',
+  'Razumeo sam. Ažuriraću podatke — osvežite portal za koji minut.',
+  'Odlično pitanje! Kontaktiraću vas čim proverim dokumenta.',
+  'Zahtev je evidentiran. Bićete obavešteni čim bude gotovo!',
+];
+let ai=0;
+function qm(t){ document.getElementById('cinp').value=t; posalji(); }
+
+function posalji(){
+  const inp=document.getElementById('cinp');
+  const txt=inp.value.trim();
+  if(!txt) return;
+  inp.value='';
+  const now=new Date().toLocaleTimeString('sr-RS',{hour:'2-digit',minute:'2-digit'});
+  const msgs=document.getElementById('cmsg');
+  msgs.innerHTML+=`<div class="mg me"><div class="mr"><div><div class="bbl me">${txt}</div><div class="mt" style="text-align:right">${now}</div></div><div class="av me">${firma.naziv.charAt(0)}</div></div></div>`;
+  msgs.scrollTop=msgs.scrollHeight;
+  posaljiEmail(txt);
+  setTimeout(()=>{
+    msgs.innerHTML+=`<div class="mg ag"><div class="mr"><div class="av ag">FK</div><div><div class="bbl ag">${AUTO[ai%AUTO.length]}</div><div class="mt">${now}</div></div></div></div>`;
+    msgs.scrollTop=msgs.scrollHeight; ai++;
+  },1000);
+}
+
+async function posaljiEmail(poruka){
+  // Podesite EmailJS na emailjs.com i zamenite vrednosti
+  const SERVICE  = 'VAŠ_SERVICE_ID';
+  const TEMPLATE = 'VAŠ_TEMPLATE_ID';
+  const PUBLIC   = 'VAŠ_PUBLIC_KEY';
+  if(SERVICE==='VAŠ_SERVICE_ID'){ console.log('Email nije podešen. Poruka:', poruka); return; }
+  try{
+    await fetch('https://api.emailjs.com/api/v1.0/email/send',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({service_id:SERVICE,template_id:TEMPLATE,user_id:PUBLIC,
+        template_params:{from_firma:firma.naziv,from_pib:firma.pib,poruka,vreme:new Date().toLocaleString('sr-RS'),to_email:VAŠ_EMAIL}})
+    });
+  }catch(e){ console.error('Email greška',e); }
+}
+
+const fmt = n => Math.round(n||0).toLocaleString('sr-RS');
+const MESECI = ['jan','feb','mar','apr','maj','jun','jul','avg','sep','okt','nov','dec'];
+function srpD(dstr){
+  if(!dstr) return '—';
+  const d = new Date(dstr);
+  if(isNaN(d)) return dstr;
+  return `${d.getDate()}. ${MESECI[d.getMonth()]} ${d.getFullYear()}.`;
+}
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
+document.getElementById('inp-pass').addEventListener('keypress',e=>{ if(e.key==='Enter') prijavi(); });
+</script>
+</body>
+</html>
