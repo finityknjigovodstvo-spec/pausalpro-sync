@@ -667,11 +667,46 @@ function renderPregled(){
     ? '<span class="ch chg">✅ Da</span>'
     : '<span class="ch chr">Ne</span>';
 
-  // OČEKIVANI PRILIVI — kombinuje FAKTURE i KPO zapise (isto kao Finity: svaki KPO je promet, fakture su podskup)
-  const naplaceno2 = izracunajStatuse();
+  // OČEKIVANI PRILIVI — kombinuje FAKTURE i KPO (zajednička funkcija, koristi je i Kalendar tab)
+  const nedospele = izracunajOcekivaneProlive();
+  const prilivEl = document.getElementById('prilivi-list');
+
+  if(!nedospele.length){
+    prilivEl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-ic">✅</div><div class="empty-t">Sav promet je izmiren</div></div>';
+  } else {
+    const ukupnoIznos = nedospele.reduce((a,x)=>a+x.preostalo,0);
+    const kasneStavke = nedospele.filter(x=>x.kasni);
+    const kasnoIznos = kasneStavke.reduce((a,x)=>a+x.preostalo,0);
+
+    let html = `<div class="sg" style="margin-bottom:11px">
+      <div class="st"><div class="st-ic">📋</div><div class="st-v o">${fmt(ukupnoIznos)}</div><div class="st-l">Neizmireno (${nedospele.length})</div></div>
+      <div class="st"><div class="st-ic">⏰</div><div class="st-v r">${fmt(kasnoIznos)}</div><div class="st-l">Kasni (${kasneStavke.length})</div></div>
+    </div>`;
+
+    html += nedospele.slice(0,12).map(x=>{
+      const rokTxt = x.kasni ? `⏰ Kasni ${x.dana} d.` : (x.dana===0 ? '🔵 Dospeva danas' : `🟡 Dospeva za ${x.dana} d.`);
+      return `<div class="ir">
+        <span class="il">${x.br} · ${x.klijent}<br><span style="font-size:10px;font-weight:600">${rokTxt}</span></span>
+        <span class="iv ${x.kasni?'r':'o'}">${fmt(x.preostalo)} RSD</span>
+      </div>`;
+    }).join('');
+
+    if(nedospele.length>12){
+      html += `<div style="text-align:center;font-size:11px;color:#96A3B5;padding-top:8px">+ još ${nedospele.length-12} stavki</div>`;
+    }
+    html += `<div class="ir" style="border-top:1.5px solid var(--brd);margin-top:6px;padding-top:10px">
+      <span class="il" style="font-weight:700;color:var(--navy)">UKUPNO</span>
+      <span class="iv" style="font-size:14px">${fmt(ukupnoIznos)} RSD</span>
+    </div>`;
+    prilivEl.innerHTML = html;
+  }
+}
+
+// ── ZAJEDNIČKA FUNKCIJA: neizmireni promet (fakture + KPO), koristi Pregled i Kalendar ──
+function izracunajOcekivaneProlive(){
+  const naplaceno = izracunajStatuse();
   const jeStornoKpo = k => (k.vrsta||'')==='Storno fakture' || parseFloat(k.iz||k.uk||0) < 0;
 
-  // Mapa po broju — KPO je primarni izvor prometa (uključuje i ručne unose bez fakture)
   const prometMap = new Map();
   pd.kpo.forEach(k=>{
     if(jeStornoKpo(k)) return;
@@ -679,7 +714,6 @@ function renderPregled(){
     if(!br) return;
     prometMap.set(br, {br, klijent:k.kl||'—', iznos:parseFloat(k.iz||k.uk||0), datum:k.dat||''});
   });
-  // Dodaj fakture koje slučajno nisu u KPO (retko, ali za svaki slučaj)
   pd.fakture.forEach(f=>{
     if((f.status||'').toLowerCase()==='storno') return;
     if(!prometMap.has(f.br)){
@@ -687,28 +721,16 @@ function renderPregled(){
     }
   });
 
-  const nedospele = [...prometMap.values()]
-    .map(p => ({p, st: statusZaBroj(p.br, p.iznos, naplaceno2)}))
-    .filter(x => x.st.cls!=='ok')
-    .sort((a,b)=>(a.p.datum||'').localeCompare(b.p.datum||''));
-
-  const prilivEl = document.getElementById('prilivi-list');
-  if(!nedospele.length){
-    prilivEl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-ic">✅</div><div class="empty-t">Sav promet je izmiren</div></div>';
-  } else {
-    const danas = new Date().toISOString().slice(0,10);
-    prilivEl.innerHTML = nedospele.slice(0,12).map(({p,st})=>{
-      const kasni = p.datum && p.datum < danas;
-      const preostalo = st.ostatak != null ? st.ostatak : p.iznos;
-      return `<div class="ir">
-        <span class="il">${p.br} · ${p.klijent}<br><span style="font-size:10px">${kasni?'⏰ Kasni od '+srpD(p.datum):'Dospeva '+srpD(p.datum)}</span></span>
-        <span class="iv ${kasni?'r':'o'}">${fmt(preostalo)} RSD</span>
-      </div>`;
-    }).join('');
-    if(nedospele.length>12){
-      prilivEl.innerHTML += `<div style="text-align:center;font-size:11px;color:#96A3B5;padding-top:8px">+ još ${nedospele.length-12} stavki</div>`;
-    }
-  }
+  const danas = new Date().toISOString().slice(0,10);
+  return [...prometMap.values()]
+    .map(p=>{
+      const st = statusZaBroj(p.br, p.iznos, naplaceno);
+      const kasni = !!(p.datum && p.datum < danas);
+      const dana = p.datum ? Math.abs(Math.ceil((new Date(danas)-new Date(p.datum))/86400000)) : 0;
+      return {...p, st, kasni, dana, preostalo: st.ostatak!=null?st.ostatak:p.iznos};
+    })
+    .filter(x=>x.st.cls!=='ok')
+    .sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
 }
 
 // ── STATUS IZMIRENJA (ista logika kao Finity: potraživanja - naplate po broju) ──
@@ -1046,13 +1068,10 @@ function renderKalendar(){
     });
   }
 
-  // Fakture — dospeća neizmirenih
-  const naplaceno = izracunajStatuse();
-  pd.fakture.filter(f=>(f.status||'').toLowerCase()!=='storno').forEach(f=>{
-    const st = statusZaBroj(f.br, parseFloat(f.ukupno||0), naplaceno);
-    if(st.cls!=='ok' && f.valuta){
-      stavke.push({datum:f.valuta, naziv:'Faktura '+f.br+' — '+(f.klijentNaziv||''), tip:'faktura', iznos:st.ostatak!=null?st.ostatak:parseFloat(f.ukupno||0), ic:'📄'});
-    }
+  // Fakture + KPO — sva neizmirena dospeća (ista funkcija kao Pregled)
+  izracunajOcekivaneProlive().forEach(x=>{
+    if(!x.datum) return;
+    stavke.push({datum:x.datum, naziv:x.br+' — '+x.klijent, tip:'promet', iznos:x.preostalo, ic:'📄'});
   });
 
   stavke.sort((a,b)=>a.datum.localeCompare(b.datum));
@@ -1066,10 +1085,11 @@ function renderKalendar(){
   el.innerHTML = stavke.map((s,i)=>{
     const d = new Date(s.datum);
     const kasni = s.datum < danas;
-    const dana = Math.ceil((d-new Date(danas))/86400000);
+    const dana = Math.abs(Math.ceil((d-new Date(danas))/86400000));
     let cls='ok', badge=`za ${dana} d.`;
-    if(kasni){ cls='hitno'; badge='kasni'; }
+    if(kasni){ cls='hitno'; badge=`kasni ${dana} d.`; }
     else if(dana<=7){ cls='skoro'; badge=`za ${dana} d.`; }
+    else if(dana===0){ badge='danas'; }
 
     return `<div class="kal-item ${cls}" onclick='otvoriPopup(${JSON.stringify(s).replace(/'/g,"&apos;")})'>
       <div class="kal-date">
