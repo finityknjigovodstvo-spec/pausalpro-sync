@@ -203,6 +203,17 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
 
 /* NOTIF BADGE */
 .tab-badge{background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:10px;padding:1px 5px;margin-left:4px}
+
+/* KOMITENTI */
+.kom-item{display:flex;align-items:center;gap:11px;padding:13px;background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(27,43,75,.07);margin-bottom:8px;cursor:pointer;transition:transform .1s}
+.kom-item:active{transform:scale(.98)}
+.kom-av{width:38px;height:38px;border-radius:10px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0}
+.kom-inf{flex:1;min-width:0}
+.kom-nm{font-size:13px;font-weight:700;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kom-sub{font-size:11px;color:#96A3B5;margin-top:2px}
+.kom-r{text-align:right;flex-shrink:0}
+.kom-zar{font-size:14px;font-weight:800;color:var(--green)}
+.kom-arr{color:#96A3B5;font-size:14px;margin-left:4px}
 </style>
 </head>
 <body>
@@ -265,6 +276,7 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
     <div class="tab" onclick="tab('izvodi',this)">🏦 Izvodi</div>
     <div class="tab" onclick="tab('poreska',this)">🏛️ Poreska uprava</div>
     <div class="tab" onclick="tab('kalendar',this)">📅 Kalendar</div>
+    <div class="tab" onclick="tab('komitenti',this)">👥 Komitenti</div>
     <div class="tab" onclick="tab('chat',this)">💬 Chat</div>
   </div>
 
@@ -420,6 +432,21 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
   <div id="t-kalendar" style="display:none">
     <div class="section-title">📅 Predstojeće obaveze i dospeća</div>
     <div id="kalendar-list"></div>
+  </div>
+
+  <!-- ═══ KOMITENTI ═══ -->
+  <div id="t-komitenti" style="display:none">
+    <div id="kom-detail-back" style="display:none;margin-bottom:10px">
+      <div class="sug" onclick="zatvoriKomitenta()" style="display:inline-flex">← Nazad na sve komitente</div>
+    </div>
+    <div id="kom-lista-view">
+      <div class="lf" style="margin-bottom:10px">
+        <input type="text" id="kom-search" placeholder="🔍 Pretraži komitenta..." oninput="renderKomitenti()"
+          style="width:100%;padding:11px 14px;background:#fff;border:1.5px solid var(--brd);border-radius:12px;font-size:13.5px;font-family:'Inter',sans-serif;outline:none;color:var(--navy)">
+      </div>
+      <div id="kom-list"></div>
+    </div>
+    <div id="kom-detail-view" style="display:none"></div>
   </div>
 
   <!-- ═══ CHAT ═══ -->
@@ -640,27 +667,47 @@ function renderPregled(){
     ? '<span class="ch chg">✅ Da</span>'
     : '<span class="ch chr">Ne</span>';
 
-  // OČEKIVANI PRILIVI — nedospele/neizmirene fakture, sortirane po roku
+  // OČEKIVANI PRILIVI — kombinuje FAKTURE i KPO zapise (isto kao Finity: svaki KPO je promet, fakture su podskup)
   const naplaceno2 = izracunajStatuse();
-  const nedospele = pd.fakture
-    .filter(f => (f.status||'').toLowerCase()!=='storno')
-    .map(f => ({f, st: statusZaBroj(f.br, parseFloat(f.ukupno||0), naplaceno2)}))
+  const jeStornoKpo = k => (k.vrsta||'')==='Storno fakture' || parseFloat(k.iz||k.uk||0) < 0;
+
+  // Mapa po broju — KPO je primarni izvor prometa (uključuje i ručne unose bez fakture)
+  const prometMap = new Map();
+  pd.kpo.forEach(k=>{
+    if(jeStornoKpo(k)) return;
+    const br = k.br || '';
+    if(!br) return;
+    prometMap.set(br, {br, klijent:k.kl||'—', iznos:parseFloat(k.iz||k.uk||0), datum:k.dat||''});
+  });
+  // Dodaj fakture koje slučajno nisu u KPO (retko, ali za svaki slučaj)
+  pd.fakture.forEach(f=>{
+    if((f.status||'').toLowerCase()==='storno') return;
+    if(!prometMap.has(f.br)){
+      prometMap.set(f.br, {br:f.br, klijent:f.klijentNaziv||'—', iznos:parseFloat(f.ukupno||0), datum:f.valuta||f.datum||''});
+    }
+  });
+
+  const nedospele = [...prometMap.values()]
+    .map(p => ({p, st: statusZaBroj(p.br, p.iznos, naplaceno2)}))
     .filter(x => x.st.cls!=='ok')
-    .sort((a,b)=>(a.f.valuta||'').localeCompare(b.f.valuta||''));
+    .sort((a,b)=>(a.p.datum||'').localeCompare(b.p.datum||''));
 
   const prilivEl = document.getElementById('prilivi-list');
   if(!nedospele.length){
-    prilivEl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-ic">✅</div><div class="empty-t">Sve fakture su izmirene</div></div>';
+    prilivEl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-ic">✅</div><div class="empty-t">Sav promet je izmiren</div></div>';
   } else {
     const danas = new Date().toISOString().slice(0,10);
-    prilivEl.innerHTML = nedospele.slice(0,10).map(({f,st})=>{
-      const kasni = f.valuta && f.valuta < danas;
-      const preostalo = st.ostatak != null ? st.ostatak : parseFloat(f.ukupno||0);
+    prilivEl.innerHTML = nedospele.slice(0,12).map(({p,st})=>{
+      const kasni = p.datum && p.datum < danas;
+      const preostalo = st.ostatak != null ? st.ostatak : p.iznos;
       return `<div class="ir">
-        <span class="il">${f.br} · ${f.klijentNaziv||'—'}<br><span style="font-size:10px">${kasni?'⏰ Kasni od '+srpD(f.valuta):'Dospeva '+srpD(f.valuta)}</span></span>
+        <span class="il">${p.br} · ${p.klijent}<br><span style="font-size:10px">${kasni?'⏰ Kasni od '+srpD(p.datum):'Dospeva '+srpD(p.datum)}</span></span>
         <span class="iv ${kasni?'r':'o'}">${fmt(preostalo)} RSD</span>
       </div>`;
     }).join('');
+    if(nedospele.length>12){
+      prilivEl.innerHTML += `<div style="text-align:center;font-size:11px;color:#96A3B5;padding-top:8px">+ još ${nedospele.length-12} stavki</div>`;
+    }
   }
 }
 
@@ -789,7 +836,6 @@ function renderTroskovnik(){
 
   const prihod = pd.kpo.reduce((a,k)=>a+parseFloat(k.iz||k.uk||0),0);
   document.getElementById('tr-ukupno').textContent = fmt(ukupno)+' RSD';
-  document.getElementById('tr-neto').textContent   = fmt(prihod-ukupno)+' RSD';
 
   // Kategorije
   const katSorted = Object.entries(kategorije).sort((a,b)=>b[1]-a[1]);
@@ -852,11 +898,12 @@ function renderIzvodi(){
 
 // ── TABS ──
 function tab(id,el){
-  ['pregled','fakture','kpo','troskovnik','izvodi','poreska','kalendar','chat'].forEach(t=>{ const e=document.getElementById('t-'+t); if(e) e.style.display='none'; });
+  ['pregled','fakture','kpo','troskovnik','izvodi','poreska','kalendar','komitenti','chat'].forEach(t=>{ const e=document.getElementById('t-'+t); if(e) e.style.display='none'; });
   document.getElementById('t-'+id).style.display='block';
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   if(id==='fakture') localStorage.setItem('fp_seen_'+firma.id, pd.fakture.length);
+  if(id==='komitenti') renderKomitenti();
   if(id==='chat') setTimeout(()=>{ const m=document.getElementById('cmsg'); m.scrollTop=m.scrollHeight; },100);
 }
 
@@ -1048,6 +1095,105 @@ function otvoriPopup(s){
   document.getElementById('popup-overlay').classList.add('open');
 }
 function zatvoriPopup(){ document.getElementById('popup-overlay').classList.remove('open'); }
+
+// ── KOMITENTI ──
+function agregirajKomitente(){
+  // Isti princip kao Finity kartica komitenta: KPO je izvor prometa, grupisano po nazivu klijenta
+  const jeStorno = k => (k.vrsta||'')==='Storno fakture' || parseFloat(k.iz||k.uk||0) < 0;
+  const naplaceno = izracunajStatuse();
+  const map = new Map();
+
+  pd.kpo.forEach(k=>{
+    if(jeStorno(k)) return;
+    const naziv = (k.kl||'').trim() || 'Nepoznat komitent';
+    if(!map.has(naziv)) map.set(naziv, {naziv, ukupno:0, brojDok:0, fakture:[]});
+    const c = map.get(naziv);
+    const iznos = parseFloat(k.iz||k.uk||0);
+    c.ukupno += iznos;
+    c.brojDok++;
+    const st = statusZaBroj(k.br, iznos, naplaceno);
+    c.fakture.push({br:k.br||'—', datum:k.dat||'', iznos, opis:k.opis||k.vrsta||'', status:st});
+  });
+
+  return [...map.values()].sort((a,b)=>b.ukupno-a.ukupno);
+}
+
+function renderKomitenti(){
+  const q = (document.getElementById('kom-search').value||'').toLowerCase().trim();
+  let kom = agregirajKomitente();
+  if(q) kom = kom.filter(k=>k.naziv.toLowerCase().includes(q));
+
+  const el = document.getElementById('kom-list');
+  if(!kom.length){
+    el.innerHTML = '<div class="empty"><div class="empty-ic">👥</div><div class="empty-t">Nema pronađenih komitenata</div></div>';
+    return;
+  }
+  el.innerHTML = kom.map((k,i)=>{
+    const inicijali = k.naziv.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase();
+    return `<div class="kom-item" onclick="otvoriKomitenta(${kom.indexOf(k)},'${q.replace(/'/g,"\\'")}')">
+      <div class="kom-av">${inicijali||'?'}</div>
+      <div class="kom-inf">
+        <div class="kom-nm">${k.naziv}</div>
+        <div class="kom-sub">${k.brojDok} ${k.brojDok===1?'dokument':'dokumenata'}</div>
+      </div>
+      <div class="kom-r">
+        <div class="kom-zar">${fmt(k.ukupno)} RSD</div>
+      </div>
+      <span class="kom-arr">›</span>
+    </div>`;
+  }).join('');
+}
+
+function otvoriKomitenta(idx, q){
+  let kom = agregirajKomitente();
+  if(q) kom = kom.filter(k=>k.naziv.toLowerCase().includes(q));
+  const k = kom[idx];
+  if(!k) return;
+
+  document.getElementById('kom-lista-view').style.display='none';
+  document.getElementById('kom-detail-back').style.display='block';
+  document.getElementById('kom-detail-view').style.display='block';
+
+  const placeno = k.fakture.filter(f=>f.status.cls==='ok').length;
+  const rows = [...k.fakture].sort((a,b)=>(b.datum||'').localeCompare(a.datum||''));
+
+  document.getElementById('kom-detail-view').innerHTML = `
+    <div class="sg" style="margin-bottom:11px">
+      <div class="st nv"><div class="st-ic">💰</div><div class="st-v">${fmt(k.ukupno)}</div><div class="st-l">Ukupno zaradio</div></div>
+      <div class="st"><div class="st-ic">✅</div><div class="st-v g">${placeno}/${k.brojDok}</div><div class="st-l">Izmireno dokumenata</div></div>
+    </div>
+    <div class="card" style="padding:14px;margin-bottom:11px">
+      <div class="ct-lft" style="font-size:14px;font-weight:800;margin-bottom:4px">${k.naziv}</div>
+      <div class="il" style="font-size:11px">Kartica komitenta — svi dokumenti</div>
+    </div>
+    <div id="kom-fak-list">
+      ${rows.map(f=>{
+        let chip,ic,bg;
+        if(f.status.cls==='ok'){chip='<span class="ch chg">✅ Izmireno</span>';ic='✅';bg='#E8F8F1';}
+        else if(f.status.cls==='part'){chip=`<span class="ch cho">◐ Delimično</span>`;ic='◐';bg='#FEF9E7';}
+        else{chip='<span class="ch cho">⏳ Neizmireno</span>';ic='⏳';bg='#FEF9E7';}
+        return `<div class="fi">
+          <div class="fi-ic" style="background:${bg}">${ic}</div>
+          <div class="fi-inf">
+            <div class="fi-br">${f.br}</div>
+            <div class="fi-kl">${f.opis||'—'}</div>
+            <div class="fi-dt">📅 ${srpD(f.datum)}</div>
+          </div>
+          <div class="fi-r">
+            <div class="fi-iz">${fmt(f.iznos)} RSD</div>
+            <div>${chip}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+function zatvoriKomitenta(){
+  document.getElementById('kom-lista-view').style.display='block';
+  document.getElementById('kom-detail-back').style.display='none';
+  document.getElementById('kom-detail-view').style.display='none';
+}
 
 // ── CHAT ──
 const AUTO = [
