@@ -400,9 +400,19 @@ setInterval(load,8000);
 def dashboard():
     return render_template_string(DASHBOARD)
 
+@app.route('/portal')
+def portal():
+    """Klijentski portal — link koji dajete klijentima."""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), 'portal.html'), encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return '<h2>Portal fajl nije pronađen. Uploadujte portal.html zajedno sa finity_sync.py na GitHub.</h2>', 404
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     print(f"\n  PaušalPro Sync — http://localhost:{port}")
     print(f"  Sync URL: http://localhost:{port}/finity-sync")
+    print(f"  Portal:   http://localhost:{port}/portal")
     print(f"  Token: {SYNC_TOKEN}\n")
     app.run(host='0.0.0.0', port=port, debug=False)
