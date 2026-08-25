@@ -728,8 +728,23 @@ function rokZaKlijenta(nazivKlijenta){
   return (!isNaN(r) && r>=0) ? r : 60; // podrazumevano 60 dana — isto kao Finity
 }
 
+// ── STORNIRANE FAKTURE (isto kao Finity: preko stornoOd polja i opisa storno zapisa) ──
+function izracunajStorniraneBrojeve(){
+  const set = new Set();
+  pd.kpo.forEach(k=>{
+    if((k.vrsta||'') !== 'Storno fakture') return;
+    const od = String(k.stornoOd||'').trim();
+    if(od) set.add(od);
+    // fallback: prepoznavanje iz teksta opisa "Storno fakture <broj>"
+    const m = String(k.opis||'').match(/storno\s+fakture\s+(\S+)/i);
+    if(m && m[1]) set.add(m[1].trim());
+  });
+  return set;
+}
+
 function izracunajOcekivaneProlive(){
   const naplaceno = izracunajStatuse();
+  const stornirano = izracunajStorniraneBrojeve();
   const jeStornoKpo = k => (k.vrsta||'')==='Storno fakture' || parseFloat(k.iz||k.uk||0) < 0;
 
   // datumIzdavanja se čuva odvojeno od roka — rok se računa: datum izdavanja + broj dana klijenta (podrazumevano 60)
@@ -738,10 +753,12 @@ function izracunajOcekivaneProlive(){
     if(jeStornoKpo(k)) return;
     const br = k.br || '';
     if(!br) return;
+    if(stornirano.has(br)) return; // faktura je poništena storno fakturom — ne prati se kao dug
     prometMap.set(br, {br, klijent:k.kl||'—', iznos:parseFloat(k.iz||k.uk||0), datumIzdavanja:k.dat||''});
   });
   pd.fakture.forEach(f=>{
     if((f.status||'').toLowerCase()==='storno') return;
+    if(stornirano.has(f.br)) return;
     if(!prometMap.has(f.br)){
       prometMap.set(f.br, {br:f.br, klijent:f.klijentNaziv||'—', iznos:parseFloat(f.ukupno||0), datumIzdavanja:f.datum||''});
     }
@@ -789,22 +806,24 @@ function statusZaBroj(br, ukupanIznos, naplaceno){
 function renderFakture(){
   const fil = document.getElementById('fak-fil').value;
   const naplaceno = izracunajStatuse();
+  const stornirano = izracunajStorniraneBrojeve();
+  const jeStorno = f => (f.status||'').toLowerCase()==='storno' || stornirano.has(f.br);
   let lista = [...pd.fakture].sort((a,b)=> (b.datum||'').localeCompare(a.datum||'') || (b.br||'').localeCompare(a.br||''));
 
-  if(fil==='izdata')   lista=lista.filter(f=>(f.status||'').toLowerCase()==='izdata');
-  else if(fil==='placena')  lista=lista.filter(f=> statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno).cls==='ok' && (f.status||'').toLowerCase()!=='storno');
-  else if(fil==='neplacena')lista=lista.filter(f=> statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno).cls!=='ok' && (f.status||'').toLowerCase()!=='storno');
-  else if(fil==='storno')  lista=lista.filter(f=>(f.status||'').toLowerCase()==='storno');
+  if(fil==='izdata')   lista=lista.filter(f=>(f.status||'').toLowerCase()==='izdata' && !jeStorno(f));
+  else if(fil==='placena')  lista=lista.filter(f=> !jeStorno(f) && statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno).cls==='ok');
+  else if(fil==='neplacena')lista=lista.filter(f=> !jeStorno(f) && statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno).cls!=='ok');
+  else if(fil==='storno')  lista=lista.filter(f=>jeStorno(f));
 
   document.getElementById('fak-br').textContent=`Fakture (${lista.length})`;
   if(!lista.length){ document.getElementById('fak-list').innerHTML='<div class="empty"><div class="empty-ic">📄</div><div class="empty-t">Nema faktura za ovaj filter</div></div>'; return; }
 
   document.getElementById('fak-list').innerHTML=lista.slice(0,60).map(f=>{
     const iz=parseFloat(f.ukupno||0);
-    const jeStorno = (f.status||'').toLowerCase()==='storno';
+    const storno = jeStorno(f);
     const st = statusZaBroj(f.br, iz, naplaceno);
     let chip,bg,ic;
-    if(jeStorno){ chip='<span class="ch chr">⛔ Storno</span>';bg='#FDEDEC';ic='⛔'; }
+    if(storno){ chip='<span class="ch chr">⛔ Storno</span>';bg='#FDEDEC';ic='⛔'; }
     else if(st.cls==='ok'){ chip='<span class="ch chg">✅ Izmirena</span>';bg='#E8F8F1';ic='✅'; }
     else if(st.cls==='part'){ chip=`<span class="ch cho">◐ Delimično (${fmt(st.placeno)})</span>`;bg='#FEF9E7';ic='◐'; }
     else { chip='<span class="ch cho">⏳ Neizmirena</span>';bg='#FEF9E7';ic='⏳'; }
@@ -837,9 +856,10 @@ function renderKPO(){
 
   if(!lista.length){ document.getElementById('kpo-list').innerHTML='<div class="empty"><div class="empty-ic">📖</div><div class="empty-t">Nema KPO zapisa</div></div>'; return; }
 
+  const stornirano = izracunajStorniraneBrojeve();
   document.getElementById('kpo-list').innerHTML=lista.slice(0,60).map(k=>{
     const iz=parseFloat(k.iz||k.uk||0);
-    const jeStorno = (k.vrsta||'')==='Storno fakture' || iz<0;
+    const jeStorno = (k.vrsta||'')==='Storno fakture' || iz<0 || stornirano.has(k.br);
     const st = statusZaBroj(k.br, iz, naplaceno);
     let statusHtml, dotColor;
     if(jeStorno){ statusHtml='<span style="color:#96A3B5">⛔ Storno</span>'; dotColor='#96A3B5'; }
@@ -1154,11 +1174,13 @@ function zatvoriPopup(){ document.getElementById('popup-overlay').classList.remo
 function agregirajKomitente(){
   // Isti princip kao Finity kartica komitenta: KPO je izvor prometa, grupisano po nazivu klijenta
   const jeStorno = k => (k.vrsta||'')==='Storno fakture' || parseFloat(k.iz||k.uk||0) < 0;
+  const stornirano = izracunajStorniraneBrojeve();
   const naplaceno = izracunajStatuse();
   const map = new Map();
 
   pd.kpo.forEach(k=>{
     if(jeStorno(k)) return;
+    if(stornirano.has(k.br)) return; // faktura je poništena — ne ulazi u zaradu komitenta
     const naziv = (k.kl||'').trim() || 'Nepoznat komitent';
     if(!map.has(naziv)) map.set(naziv, {naziv, ukupno:0, brojDok:0, fakture:[]});
     const c = map.get(naziv);
