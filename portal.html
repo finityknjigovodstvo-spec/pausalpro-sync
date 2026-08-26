@@ -394,9 +394,14 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
       <div class="st-v r" id="tr-ukupno" style="font-size:24px">—</div>
       <div class="st-l">Ukupni troškovi (iz izvoda)</div>
     </div>
-    <div class="section-title">💸 Troškovi po kategoriji</div>
+    <div class="section-title">💸 Troškovi po kategoriji <span style="font-weight:400;color:#96A3B5;text-transform:none;letter-spacing:0">(kliknite za filter)</span></div>
     <div class="card" style="padding:11px 13px"><div id="tr-kat"></div></div>
-    <div class="section-title">📋 Poslednje stavke troškova</div>
+    <div class="frow">
+      <div class="frow-t" id="tr-stavke-naslov">Stavke troškova</div>
+      <select class="fsel" id="tr-kat-filter" onchange="renderTroskovStavke()">
+        <option value="sve">Sve kategorije</option>
+      </select>
+    </div>
     <div class="card" style="padding:11px 13px"><div id="tr-stavke"></div></div>
   </div>
 
@@ -411,21 +416,10 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
 
   <!-- ═══ POREZI/DOPRINOSI ═══ -->
   <div id="t-poreska" style="display:none">
-    <div id="poreska-readonly">
-      <div id="poreska-list"></div>
+    <div style="background:#EEF2FF;border:1px solid #D6DEFF;border-radius:10px;padding:9px 12px;margin-bottom:11px;font-size:11.5px;color:#3B4B8C;line-height:1.5">
+      ℹ️ Ove podatke unosi vaš računovođa direktno kroz Finity aplikaciju — prikazuju se ovde automatski.
     </div>
-    <!-- Admin panel — sakriven, otvara se lozinkom -->
-    <div class="card" style="margin-top:8px">
-      <div class="ct" style="cursor:pointer" onclick="togglePoreskaAdmin()">
-        <div class="ct-lft">🔒 Ažuriranje stanja (za računovođu)</div>
-        <span style="font-size:11px;color:var(--gold)">Otvori ▾</span>
-      </div>
-      <div id="poreska-admin" style="display:none">
-        <div class="lf" style="margin-top:6px"><label>Admin lozinka</label><input type="password" id="poreska-pass" placeholder="Lozinka računovođe"></div>
-        <div id="poreska-form"></div>
-        <button class="lbtn" style="margin-top:8px" onclick="sacuvajPoreska()">💾 Sačuvaj stanje</button>
-      </div>
-    </div>
+    <div id="poreska-list"></div>
   </div>
 
   <!-- ═══ KALENDAR ═══ -->
@@ -543,9 +537,7 @@ function startApp(){
   document.getElementById('hdr-naziv').textContent = firma.naziv;
   document.getElementById('hdr-pib').textContent = 'PIB ' + firma.pib;
   ucitaj();
-  ucitajPoreska();
   setInterval(ucitaj, 10000);
-  setInterval(ucitajPoreska, 30000);
 }
 
 window.addEventListener('load', () => {
@@ -576,6 +568,8 @@ async function ucitaj(){
     pd.settings    = fd.settings    || {};
     pd.troskoviRucni = fd.troskoviRucni || [];
     pd.klijenti    = fd.klijenti    || [];
+    pd.poreskeObaveze = fd.poreskeObaveze || null;
+    pd.kalendarStavke = fd.kalendarStavke || [];
 
     let firme = keys['knjigo_firme'] || [];
     if(typeof firme==='string'){ try{ firme=JSON.parse(firme); }catch(e){ firme=[]; } }
@@ -802,6 +796,23 @@ function statusZaBroj(br, ukupanIznos, naplaceno){
   return {label:'Neizmireno', cls:'no', placeno:0, ostatak};
 }
 
+// ── IZVODI PREKO KOJIH JE FAKTURA NAPLAĆENA ──
+function izvodiZaBroj(br){
+  return pd.naplate
+    .filter(n => (n.faktBr||'') === br)
+    .map(n => ({izvodBr: n.izvodBr||'?', datum: n.datum||'', iznos: parseFloat(n.iznos||0)}))
+    .sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
+}
+function opisIzvodaZaBroj(br){
+  const lista = izvodiZaBroj(br);
+  if(!lista.length) return '';
+  // Grupiši po broju izvoda (moguće više uplata sa istog izvoda)
+  const brojevi = [...new Set(lista.map(x=>x.izvodBr))];
+  return brojevi.length===1
+    ? `preko izvoda br. ${brojevi[0]}`
+    : `preko izvoda br. ${brojevi.join(', ')}`;
+}
+
 // ── FAKTURE ──
 function renderFakture(){
   const fil = document.getElementById('fak-fil').value;
@@ -828,12 +839,15 @@ function renderFakture(){
     else if(st.cls==='part'){ chip=`<span class="ch cho">◐ Delimično (${fmt(st.placeno)})</span>`;bg='#FEF9E7';ic='◐'; }
     else { chip='<span class="ch cho">⏳ Neizmirena</span>';bg='#FEF9E7';ic='⏳'; }
 
+    const izvodInfo = (st.cls==='ok'||st.cls==='part') ? opisIzvodaZaBroj(f.br) : '';
+
     return `<div class="fi">
       <div class="fi-ic" style="background:${bg}">${ic}</div>
       <div class="fi-inf">
         <div class="fi-br">${f.br||'—'}</div>
         <div class="fi-kl">${f.klijentNaziv||'—'}</div>
         <div class="fi-dt">📅 ${srpD(f.datum)} &nbsp;→&nbsp; ⏰ ${srpD(f.valuta)}</div>
+        ${izvodInfo ? `<div class="fi-dt" style="color:var(--green);font-weight:600">🏦 ${izvodInfo}</div>` : ''}
       </div>
       <div class="fi-r">
         <div class="fi-iz">${fmt(iz)} RSD</div>
@@ -867,12 +881,15 @@ function renderKPO(){
     else if(st.cls==='part'){ statusHtml=`<span style="color:var(--orange)">◐ Delimično (${fmt(st.placeno)})</span>`; dotColor='var(--orange)'; }
     else{ statusHtml='<span style="color:var(--orange)">⏳ Neizmireno</span>'; dotColor='var(--orange)'; }
 
+    const izvodInfo = (!jeStorno && (st.cls==='ok'||st.cls==='part')) ? opisIzvodaZaBroj(k.br) : '';
+
     return `<div class="ki">
       <div class="kdot" style="background:${dotColor}"></div>
       <div class="k-inf">
         <div class="k-op">${k.opis||k.vrsta||'—'}</div>
         <div class="k-kl">👤 ${k.kl||'—'} &nbsp;·&nbsp; Br: ${k.br||'—'}</div>
         <div class="k-dt">📅 ${srpD(k.dat)} &nbsp;·&nbsp; ${statusHtml}</div>
+        ${izvodInfo ? `<div class="k-dt" style="color:var(--green);font-weight:600">🏦 ${izvodInfo}</div>` : ''}
       </div>
       <div class="k-iz" style="color:${iz<0?'var(--red)':'var(--green)'}">${iz<0?'':'+'}${fmt(iz)} RSD</div>
     </div>`;
@@ -880,6 +897,11 @@ function renderKPO(){
 }
 
 // ── TROSKOVNIK ──
+let troskovStavkeSve = [];
+let troskovKatFilter = 'sve';
+const TROSAK_ICONS = {'Bankarske provizije':'🏦','Porezi i doprinosi':'🏛️','Porez na prihod':'🏛️','Doprinos PIO':'👴','Doprinos zdravstvo':'🏥',
+  'Doprinos nezaposlenost':'🛡️','Podizanje dobiti':'💵','Dobavljači':'🛒','Zakup':'🏠','Ostalo':'📦','Bez kategorije':'❔'};
+
 function renderTroskovnik(){
   // Pokupi troškove iz stavki izvoda — koristi TAČNO polje trosakTip (isto kao Finity)
   const kategorije = {};
@@ -899,7 +921,6 @@ function renderTroskovnik(){
     }
   }
 
-  // Dodaj ručne troškove ako postoje
   for(const tr of pd.troskoviRucni||[]){
     const ap = parseFloat(tr.iznos||0);
     ukupno += ap;
@@ -908,27 +929,50 @@ function renderTroskovnik(){
     stavke.push({opis:tr.opis||'—', iznos:ap, datum:tr.datum||'—', kat});
   }
 
-  const prihod = pd.kpo.reduce((a,k)=>a+parseFloat(k.iz||k.uk||0),0);
+  troskovStavkeSve = stavke;
   document.getElementById('tr-ukupno').textContent = fmt(ukupno)+' RSD';
 
-  // Kategorije
-  const katSorted = Object.entries(kategorije).sort((a,b)=>b[1]-a[1]);
-  const ICONS = {'Bankarske provizije':'🏦','Porezi i doprinosi':'🏛️','Porez na prihod':'🏛️','Doprinos PIO':'👴','Doprinos zdravstvo':'🏥',
-    'Doprinos nezaposlenost':'🛡️','Podizanje dobiti':'💵','Dobavljači':'🛒','Zakup':'🏠','Ostalo':'📦','Bez kategorije':'❔'};
+  // Popuni filter select sa stvarnim kategorijama
+  const filterEl = document.getElementById('tr-kat-filter');
+  const trenutna = filterEl.value;
+  const sveKat = Object.keys(kategorije).sort();
+  filterEl.innerHTML = '<option value="sve">Sve kategorije</option>' + sveKat.map(k=>`<option value="${k}">${k}</option>`).join('');
+  if(sveKat.includes(trenutna) || trenutna==='sve') filterEl.value = trenutna;
 
+  // Kategorije — kartice, klik postavlja filter
+  const katSorted = Object.entries(kategorije).sort((a,b)=>b[1]-a[1]);
   document.getElementById('tr-kat').innerHTML = katSorted.length===0
     ? '<div class="empty"><div class="empty-ic">💸</div><div class="empty-t">Nema evidentiranih troškova</div></div>'
-    : katSorted.map(([k,v])=>`<div class="tr-item">
-        <div class="tr-ic" style="background:var(--slate)">${ICONS[k]||'📦'}</div>
+    : katSorted.map(([k,v])=>`<div class="tr-item" style="cursor:pointer" onclick="postaviTroskovFilter('${k.replace(/'/g,"\\'")}')">
+        <div class="tr-ic" style="background:var(--slate)">${TROSAK_ICONS[k]||'📦'}</div>
         <div class="tr-nm">${k}</div>
         <div class="tr-iz">${fmt(v)} RSD</div>
       </div>`).join('');
 
-  // Poslednje stavke
-  const stavkeSorted = stavke.sort((a,b)=>b.datum.localeCompare(a.datum)).slice(0,20);
-  document.getElementById('tr-stavke').innerHTML = stavkeSorted.length===0
-    ? '<div class="empty-t" style="color:#96A3B5;text-align:center;padding:12px">Nema stavki</div>'
-    : stavkeSorted.map(s=>`<div class="ki">
+  renderTroskovStavke();
+}
+
+function postaviTroskovFilter(kat){
+  document.getElementById('tr-kat-filter').value = kat;
+  renderTroskovStavke();
+  document.getElementById('tr-stavke').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function renderTroskovStavke(){
+  const filter = document.getElementById('tr-kat-filter').value;
+  let lista = [...troskovStavkeSve];
+  if(filter !== 'sve') lista = lista.filter(s=>s.kat===filter);
+  lista.sort((a,b)=>b.datum.localeCompare(a.datum));
+
+  document.getElementById('tr-stavke-naslov').textContent = filter==='sve'
+    ? `Sve stavke (${lista.length})`
+    : `${filter} (${lista.length})`;
+
+  const prikaz = filter==='sve' ? lista.slice(0,25) : lista;
+
+  document.getElementById('tr-stavke').innerHTML = prikaz.length===0
+    ? '<div class="empty-t" style="color:#96A3B5;text-align:center;padding:12px">Nema stavki za ovaj filter</div>'
+    : prikaz.map(s=>`<div class="ki">
         <div class="kdot" style="background:var(--red)"></div>
         <div class="k-inf">
           <div class="k-op">${s.opis.length>60?s.opis.substring(0,60)+'...':s.opis}</div>
@@ -936,7 +980,11 @@ function renderTroskovnik(){
         </div>
         <div class="k-iz" style="color:var(--red)">−${fmt(s.iznos)} RSD</div>
       </div>`).join('');
+  if(filter==='sve' && lista.length>25){
+    document.getElementById('tr-stavke').innerHTML += `<div style="text-align:center;font-size:11px;color:#96A3B5;padding-top:8px">+ još ${lista.length-25} — izaberite kategoriju za kompletan prikaz</div>`;
+  }
 }
+
 
 // ── IZVODI ──
 function renderIzvodi(){
@@ -1007,103 +1055,62 @@ const POREZ_KATEGORIJE = [
   {key:'nezaposlenost', naziv:'Doprinos nezaposlenost', ic:'🛡️', bg:'#F0FDF4'},
   {key:'porez', naziv:'Porez na prihod (paušal)', ic:'🏛️', bg:'#FFFBEB'},
 ];
-let poreskiPodaci = null;
 
-async function ucitajPoreska(){
-  try{
-    const r = await fetch(SERVER+'/porezi', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({akcija:'load', firma_id:firma.id})
-    });
-    const j = await r.json();
-    poreskiPodaci = j.ok ? j.data : null;
-  }catch(e){ poreskiPodaci = null; }
-  renderPoreska();
+function najnovijaGodina(godineObj){
+  const kljucevi = Object.keys(godineObj||{});
+  if(!kljucevi.length) return null;
+  return kljucevi.sort((a,b)=>parseInt(a)-parseInt(b)).pop();
 }
 
 function renderPoreska(){
   const el = document.getElementById('poreska-list');
   if(!el) return;
-  if(!poreskiPodaci){
-    el.innerHTML = '<div class="empty"><div class="empty-ic">🏛️</div><div class="empty-t">Vaš računovođa još nije uneo stanje poreskih obaveza.</div></div>';
+  const podaci = pd.poreskeObaveze;
+  const imaBiloSta = podaci && POREZ_KATEGORIJE.some(k => Object.keys((podaci[k.key]||{}).godine||{}).length);
+  if(!imaBiloSta){
+    el.innerHTML = '<div class="empty"><div class="empty-ic">🏛️</div><div class="empty-t">Vaš računovođa još nije uneo stanje poreskih obaveza kroz Finity aplikaciju.</div></div>';
     return;
   }
+  const danas = new Date().toISOString().slice(0,10);
   el.innerHTML = POREZ_KATEGORIJE.map(k=>{
-    const d = poreskiPodaci[k.key] || {};
-    const stanje = parseFloat(d.stanje||0);
+    const d = (podaci && podaci[k.key]) || {};
+    const godine = d.godine || {};
+    const posGod = najnovijaGodina(godine);
+    const tekuca = posGod ? (godine[posGod]||{}) : {};
+    const stanje = parseFloat(tekuca.stanje||0);
+    const bop = parseFloat(tekuca.bop||0);
     const rok = d.rok || '';
-    const danas = new Date().toISOString().slice(0,10);
+
     let rokBoja = 'g', rokTxt = rok ? 'Rok: '+srpD(rok) : 'Rok nije unet';
     if(rok && rok < danas){ rokBoja='r'; rokTxt='⏰ Kasni od '+srpD(rok); }
     else if(rok){
       const dana = Math.ceil((new Date(rok)-new Date(danas))/86400000);
       if(dana<=7){ rokBoja='o'; rokTxt=`⏳ Za ${dana} dana — ${srpD(rok)}`; }
     }
-    return `<div class="por-item">
+
+    // Istorija po godinama (ako ima više od jedne)
+    const sveGod = Object.keys(godine).sort((a,b)=>parseInt(b)-parseInt(a));
+    const istorija = sveGod.length>1 ? `
+      <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--brd)">
+        ${sveGod.map(g=>`<div class="ir" style="padding:4px 0">
+          <span class="il" style="font-size:11px">${g}. — BOP ${fmt(godine[g].bop||0)}</span>
+          <span class="iv" style="font-size:11px">${fmt(godine[g].stanje||0)} RSD</span>
+        </div>`).join('')}
+      </div>` : '';
+
+    return `<div class="por-item" style="flex-wrap:wrap">
       <div class="por-ic" style="background:${k.bg}">${k.ic}</div>
       <div class="por-inf">
         <div class="por-nm">${k.naziv}</div>
-        <div class="por-sub">BOP: ${fmt(d.bop||0)} RSD</div>
+        <div class="por-sub">${posGod ? posGod+'. — BOP: '+fmt(bop)+' RSD' : 'Nema unetih podataka'}</div>
       </div>
       <div class="por-val">
         <div class="por-stanje" style="color:${stanje>0?'var(--red)':'var(--green)'}">${fmt(stanje)} RSD</div>
         <div class="por-rok iv ${rokBoja}">${rokTxt}</div>
       </div>
-    </div>`;
-  }).join('') + (poreskiPodaci.azurirano ? `<div style="text-align:center;font-size:10.5px;color:#96A3B5;margin-top:8px">Ažurirano: ${poreskiPodaci.azurirano}</div>` : '');
-}
-
-function togglePoreskaAdmin(){
-  const el = document.getElementById('poreska-admin');
-  const otvoren = el.style.display !== 'none';
-  el.style.display = otvoren ? 'none' : 'block';
-  if(!otvoren) renderPoreskaForm();
-}
-
-function renderPoreskaForm(){
-  const form = document.getElementById('poreska-form');
-  form.innerHTML = POREZ_KATEGORIJE.map(k=>{
-    const d = (poreskiPodaci && poreskiPodaci[k.key]) || {};
-    return `<div style="border-top:1px solid var(--brd);padding-top:10px;margin-top:10px">
-      <div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:6px">${k.ic} ${k.naziv}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div class="lf" style="margin-bottom:6px"><label>BOP</label><input type="number" id="pf-${k.key}-bop" value="${d.bop||0}"></div>
-        <div class="lf" style="margin-bottom:6px"><label>Stanje duga</label><input type="number" id="pf-${k.key}-stanje" value="${d.stanje||0}"></div>
-      </div>
-      <div class="lf"><label>Sledeći rok plaćanja</label><input type="date" id="pf-${k.key}-rok" value="${d.rok||''}"></div>
+      ${istorija}
     </div>`;
   }).join('');
-}
-
-async function sacuvajPoreska(){
-  const pass = document.getElementById('poreska-pass').value;
-  if(pass !== ADMIN_LOZINKA){ toast('⚠️ Pogrešna admin lozinka.'); return; }
-
-  const payload = {};
-  POREZ_KATEGORIJE.forEach(k=>{
-    payload[k.key] = {
-      bop: parseFloat(document.getElementById(`pf-${k.key}-bop`).value||0),
-      stanje: parseFloat(document.getElementById(`pf-${k.key}-stanje`).value||0),
-      rok: document.getElementById(`pf-${k.key}-rok`).value||'',
-    };
-  });
-
-  try{
-    const r = await fetch(SERVER+'/porezi', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({akcija:'save', firma_id:firma.id, token:pass, data:payload})
-    });
-    const j = await r.json();
-    if(j.ok){
-      toast('✅ Sačuvano!');
-      poreskiPodaci = payload;
-      poreskiPodaci.azurirano = new Date().toLocaleString('sr-RS');
-      renderPoreska();
-      document.getElementById('poreska-admin').style.display='none';
-    } else {
-      toast('⚠️ '+(j.poruka||'Greška'));
-    }
-  }catch(e){ toast('⚠️ Greška pri čuvanju.'); }
 }
 
 // ── KALENDAR ──
@@ -1112,17 +1119,26 @@ function renderKalendar(){
   const danas = new Date().toISOString().slice(0,10);
   const stavke = [];
 
-  // Poreske obaveze rokovi
-  if(poreskiPodaci){
+  // Poreske obaveze rokovi (unosi računovođa kroz Finity)
+  if(pd.poreskeObaveze){
     POREZ_KATEGORIJE.forEach(k=>{
-      const d = poreskiPodaci[k.key];
+      const d = pd.poreskeObaveze[k.key];
       if(d && d.rok){
-        stavke.push({datum:d.rok, naziv:k.naziv, tip:'porez', iznos:d.stanje, ic:k.ic});
+        const posGod = najnovijaGodina(d.godine);
+        const stanje = posGod ? parseFloat((d.godine[posGod]||{}).stanje||0) : 0;
+        stavke.push({datum:d.rok, naziv:k.naziv, tip:'porez', iznos:stanje, ic:k.ic});
       }
     });
   }
 
-  // Fakture + KPO — sva neizmirena dospeća (ista funkcija kao Pregled)
+  // Ručne kalendar stavke (unosi računovođa kroz Finity)
+  (pd.kalendarStavke||[]).forEach(k=>{
+    if(!k.datum) return;
+    const ic = k.tip==='sastanak' ? '📅' : (k.tip==='ostalo' ? '📌' : '🔔');
+    stavke.push({datum:k.datum, naziv:k.naziv||'—', tip:'rucno', iznos:parseFloat(k.iznos||0), ic, napomena:k.napomena||''});
+  });
+
+  // Fakture + KPO — sva neizmirena dospeća (ista funkcija kao Pregled) — automatski
   izracunajOcekivaneProlive().forEach(x=>{
     if(!x.datum) return;
     stavke.push({datum:x.datum, naziv:x.br+' — '+x.klijent, tip:'promet', iznos:x.preostalo, ic:'📄'});
@@ -1160,11 +1176,13 @@ function renderKalendar(){
 }
 
 function otvoriPopup(s){
-  document.getElementById('popup-title').textContent = s.tip==='porez' ? '🏛️ Poreska obaveza' : '📄 Dospeće fakture';
+  const naslovi = {porez:'🏛️ Poreska obaveza', rucno:'🔔 Podsetnik', promet:'📄 Dospeće fakture'};
+  document.getElementById('popup-title').textContent = naslovi[s.tip] || 'Detalji';
   document.getElementById('popup-body').innerHTML = `
     <div class="ir"><span class="il">Naziv</span><span class="iv">${s.naziv}</span></div>
     <div class="ir"><span class="il">Iznos</span><span class="iv" style="font-size:16px">${fmt(s.iznos)} RSD</span></div>
     <div class="ir"><span class="il">Datum</span><span class="iv">${srpD(s.datum)}</span></div>
+    ${s.napomena ? `<div class="ir"><span class="il">Napomena</span><span class="iv" style="font-size:12px;text-align:right">${s.napomena}</span></div>` : ''}
   `;
   document.getElementById('popup-overlay').classList.add('open');
 }
@@ -1248,12 +1266,14 @@ function otvoriKomitenta(idx, q){
         if(f.status.cls==='ok'){chip='<span class="ch chg">✅ Izmireno</span>';ic='✅';bg='#E8F8F1';}
         else if(f.status.cls==='part'){chip=`<span class="ch cho">◐ Delimično</span>`;ic='◐';bg='#FEF9E7';}
         else{chip='<span class="ch cho">⏳ Neizmireno</span>';ic='⏳';bg='#FEF9E7';}
+        const izvodInfo = (f.status.cls==='ok'||f.status.cls==='part') ? opisIzvodaZaBroj(f.br) : '';
         return `<div class="fi">
           <div class="fi-ic" style="background:${bg}">${ic}</div>
           <div class="fi-inf">
             <div class="fi-br">${f.br}</div>
             <div class="fi-kl">${f.opis||'—'}</div>
             <div class="fi-dt">📅 ${srpD(f.datum)}</div>
+            ${izvodInfo ? `<div class="fi-dt" style="color:var(--green);font-weight:600">🏦 ${izvodInfo}</div>` : ''}
           </div>
           <div class="fi-r">
             <div class="fi-iz">${fmt(f.iznos)} RSD</div>
@@ -1299,18 +1319,12 @@ function posalji(){
 }
 
 async function posaljiEmail(poruka){
-  // Podesite EmailJS na emailjs.com i zamenite vrednosti
-  const SERVICE  = 'VAŠ_SERVICE_ID';
-  const TEMPLATE = 'VAŠ_TEMPLATE_ID';
-  const PUBLIC   = 'VAŠ_PUBLIC_KEY';
-  if(SERVICE==='VAŠ_SERVICE_ID'){ console.log('Email nije podešen. Poruka:', poruka); return; }
   try{
-    await fetch('https://api.emailjs.com/api/v1.0/email/send',{
+    await fetch(SERVER+'/chat-poruka', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({service_id:SERVICE,template_id:TEMPLATE,user_id:PUBLIC,
-        template_params:{from_firma:firma.naziv,from_pib:firma.pib,poruka,vreme:new Date().toLocaleString('sr-RS'),to_email:VAŠ_EMAIL}})
+      body: JSON.stringify({firma_naziv:firma.naziv, firma_pib:firma.pib, poruka})
     });
-  }catch(e){ console.error('Email greška',e); }
+  }catch(e){ console.error('Email greška:', e); }
 }
 
 const fmt = n => Math.round(n||0).toLocaleString('sr-RS');
