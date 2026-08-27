@@ -13,7 +13,7 @@ app = Flask(__name__)
 SYNC_TOKEN = os.environ.get('FINITY_TOKEN', 'pausalpro2026')
 
 # ─── EMAIL PODEŠAVANJA (Resend — HTTPS API, ne SMTP jer Railway blokira SMTP portove) ───
-GMAIL_USER = os.environ.get('GMAIL_USER', 'finity.knjigovodstvu@gmail.com')
+GMAIL_USER = os.environ.get('GMAIL_USER', 'finity.knjigovodstvo@gmail.com')
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 
 # ─── PUSH NOTIFIKACIJE (Web Push / VAPID) ───
