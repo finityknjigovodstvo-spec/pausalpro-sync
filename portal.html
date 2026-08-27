@@ -1190,7 +1190,7 @@ function tab(id,el){
   el.classList.add('active');
   if(id==='fakture') localStorage.setItem('fp_seen_'+firma.id, pd.fakture.length);
   if(id==='komitenti') renderKomitenti();
-  if(id==='chat') setTimeout(()=>{ const m=document.getElementById('cmsg'); m.scrollTop=m.scrollHeight; },100);
+  if(id==='chat'){ ucitajChatPoruke(); setTimeout(()=>{ const m=document.getElementById('cmsg'); m.scrollTop=m.scrollHeight; },100); }
 }
 
 // ── NOVE FAKTURE — notifikacija ──
@@ -1458,40 +1458,57 @@ function zatvoriKomitenta(){
 }
 
 // ── CHAT ──
-const AUTO = [
-  'Primio sam vaš zahtev! Obradiću ga danas. 😊',
-  'Hvala! Proveravam i javljam u roku od sat vremena.',
-  'Razumeo sam. Ažuriraću podatke — osvežite portal za koji minut.',
-  'Odlično pitanje! Kontaktiraću vas čim proverim dokumenta.',
-  'Zahtev je evidentiran. Bićete obavešteni čim bude gotovo!',
-];
-let ai=0;
 function qm(t){ document.getElementById('cinp').value=t; posalji(); }
+
+let chatPoznatoPoruka = 0;
+
+function renderChatPoruke(poruke){
+  const msgs = document.getElementById('cmsg');
+  // Prva poruka dobrodošlice ostaje uvek na vrhu
+  const dobrodoslica = msgs.querySelector('.mg.ag')?.outerHTML || '';
+  const ostatak = poruke.map(p=>{
+    if(p.od === 'klijent'){
+      return `<div class="mg me"><div class="mr"><div><div class="bbl me">${p.tekst}</div><div class="mt" style="text-align:right">${p.vreme.split(' ')[1]||''}</div></div><div class="av me">${firma.naziv.charAt(0)}</div></div></div>`;
+    }
+    return `<div class="mg ag"><div class="mr"><div class="av ag">FK</div><div><div class="bbl ag">${p.tekst}</div><div class="mt">${p.vreme.split(' ')[1]||''} · Finity Knjigovodstvo</div></div></div></div>`;
+  }).join('');
+  msgs.innerHTML = dobrodoslica + ostatak;
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function ucitajChatPoruke(){
+  try{
+    const r = await fetch(SERVER+'/chat-poruke?firma_id='+encodeURIComponent(firma.id));
+    const j = await r.json();
+    if(j.ok){
+      const poruke = j.poruke || [];
+      if(poruke.length !== chatPoznatoPoruka){
+        chatPoznatoPoruka = poruke.length;
+        renderChatPoruke(poruke);
+      }
+    }
+  }catch(e){ /* tiho — probaj opet za koji trenutak */ }
+}
 
 function posalji(){
   const inp=document.getElementById('cinp');
   const txt=inp.value.trim();
   if(!txt) return;
   inp.value='';
-  const now=new Date().toLocaleTimeString('sr-RS',{hour:'2-digit',minute:'2-digit'});
-  const msgs=document.getElementById('cmsg');
-  msgs.innerHTML+=`<div class="mg me"><div class="mr"><div><div class="bbl me">${txt}</div><div class="mt" style="text-align:right">${now}</div></div><div class="av me">${firma.naziv.charAt(0)}</div></div></div>`;
-  msgs.scrollTop=msgs.scrollHeight;
-  posaljiEmail(txt);
-  setTimeout(()=>{
-    msgs.innerHTML+=`<div class="mg ag"><div class="mr"><div class="av ag">FK</div><div><div class="bbl ag">${AUTO[ai%AUTO.length]}</div><div class="mt">${now}</div></div></div></div>`;
-    msgs.scrollTop=msgs.scrollHeight; ai++;
-  },1000);
+  posaljiPoruku(txt);
 }
 
-async function posaljiEmail(poruka){
+async function posaljiPoruku(poruka){
   try{
     await fetch(SERVER+'/chat-poruka', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({firma_naziv:firma.naziv, firma_pib:firma.pib, poruka})
+      body: JSON.stringify({firma_id:firma.id, firma_naziv:firma.naziv, firma_pib:firma.pib, poruka})
     });
-  }catch(e){ console.error('Email greška:', e); }
+    ucitajChatPoruke(); // odmah povuci najnoviju listu (uključuje i poruku koju smo upravo poslali)
+  }catch(e){ toast('⚠️ Greška pri slanju poruke.'); }
 }
+
+setInterval(()=>{ if(firma) ucitajChatPoruke(); }, 6000);
 
 const fmt = n => Math.round(n||0).toLocaleString('sr-RS');
 const MESECI = ['jan','feb','mar','apr','maj','jun','jul','avg','sep','okt','nov','dec'];
