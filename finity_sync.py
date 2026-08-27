@@ -707,17 +707,17 @@ _ICON_180_B64 = "iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAAKnklEQVR4nO3dfWz
 @app.route('/icon-192.png')
 def icon_192():
     import base64
-    return base64.b64decode(_ICON_192_B64), 200, {'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400'}
+    return base64.b64decode(_ICON_192_B64), 200, {'Content-Type': 'image/png', 'Cache-Control': 'no-cache, must-revalidate'}
 
 @app.route('/icon-512.png')
 def icon_512():
     import base64
-    return base64.b64decode(_ICON_512_B64), 200, {'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400'}
+    return base64.b64decode(_ICON_512_B64), 200, {'Content-Type': 'image/png', 'Cache-Control': 'no-cache, must-revalidate'}
 
 @app.route('/icon-180.png')
 def icon_180():
     import base64
-    return base64.b64decode(_ICON_180_B64), 200, {'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400'}
+    return base64.b64decode(_ICON_180_B64), 200, {'Content-Type': 'image/png', 'Cache-Control': 'no-cache, must-revalidate'}
 
 @app.route('/manifest.json')
 def manifest_json():
@@ -734,7 +734,9 @@ def manifest_json():
             {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
         ]
     }
-    return jsonify(manifest)
+    resp = jsonify(manifest)
+    resp.headers['Cache-Control'] = 'no-cache, must-revalidate'
+    return resp
 
 @app.route('/sw.js')
 def service_worker():
