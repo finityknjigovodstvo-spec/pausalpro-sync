@@ -695,7 +695,8 @@ def portal():
     """Klijentski portal — link koji dajete klijentima."""
     try:
         with open(os.path.join(os.path.dirname(__file__), 'portal.html'), encoding='utf-8') as f:
-            return f.read()
+            html = f.read()
+        return html, 200, {'Cache-Control': 'no-cache, must-revalidate'}
     except FileNotFoundError:
         return '<h2>Portal fajl nije pronađen. Uploadujte portal.html zajedno sa finity_sync.py na GitHub.</h2>', 404
 
