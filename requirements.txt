@@ -1,3 +1,4 @@
 flask==3.0.0
 PyJWT==2.8.0
 gunicorn==21.2.0
+pywebpush==2.0.0

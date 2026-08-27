@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Finity Portal">
+<meta name="theme-color" content="#1B2B4B">
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Finity%20Portal%22%2C%22short_name%22%3A%22Finity%22%2C%22start_url%22%3A%22.%2Fportal%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23F3F4F8%22%2C%22theme_color%22%3A%22%231B2B4B%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2527http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2527%2520viewBox%253D%25270%25200%2520100%2520100%2527%253E%253Crect%2520width%253D%2527100%2527%2520height%253D%2527100%2527%2520rx%253D%252722%2527%2520fill%253D%2527%25231B2B4B%2527%252F%253E%253Ctext%2520x%253D%252750%2527%2520y%253D%252568%2527%2520font-size%253D%252755%2527%2520font-family%253D%2527Arial%252C%2520sans-serif%2527%2520font-weight%253D%2527900%2527%2520fill%253D%2527%2523C9A84C%2527%2520text-anchor%253D%2527middle%2527%253E%25D0%25A4%253C%252Ftext%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
 <title>Finity Portal</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -90,6 +94,7 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
 .ch{display:inline-flex;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px}
 .chg{background:#E8F8F1;color:var(--green)}.chr{background:#FDEDEC;color:var(--red)}
 .cho{background:#FEF9E7;color:var(--orange)}.chb{background:#EEF2FF;color:var(--blue)}
+.chn{background:#F0F0F2;color:#8A8F98}
 
 /* FILTER ROW */
 .frow{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;gap:8px}
@@ -272,9 +277,9 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
     <div class="tab active" onclick="tab('pregled',this)">📊 Pregled</div>
     <div class="tab" onclick="tab('fakture',this)">📄 Fakture</div>
     <div class="tab" onclick="tab('kpo',this)">📖 KPO</div>
-    <div class="tab" onclick="tab('troskovnik',this)">💸 Troškovi</div>
-    <div class="tab" onclick="tab('izvodi',this)">🏦 Izvodi</div>
-    <div class="tab" onclick="tab('poreska',this)">🏛️ Poreska uprava</div>
+    <div class="tab" id="tab-btn-troskovnik" onclick="tab('troskovnik',this)">💸 Troškovi</div>
+    <div class="tab" id="tab-btn-izvodi" onclick="tab('izvodi',this)">🏦 Izvodi</div>
+    <div class="tab" id="tab-btn-poreska" onclick="tab('poreska',this)">🏛️ Poreska uprava</div>
     <div class="tab" onclick="tab('kalendar',this)">📅 Kalendar</div>
     <div class="tab" onclick="tab('komitenti',this)">👥 Komitenti</div>
     <div class="tab" onclick="tab('chat',this)">💬 Chat</div>
@@ -291,7 +296,7 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
       <div class="st">
         <div class="st-ic">🏦</div>
         <div class="st-v" id="s-stanje">—</div>
-        <div class="st-l">Stanje računa (RSD)</div>
+        <div class="st-l" id="s-stanje-lbl">Stanje računa (RSD)</div>
       </div>
       <div class="st">
         <div class="st-ic">📄</div>
@@ -364,6 +369,7 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
         <option value="izdata">Izdate</option>
         <option value="placena">Plaćene</option>
         <option value="neplacena">Neplaćene</option>
+        <option value="neprati">Ne prati se</option>
         <option value="storno">Storno</option>
       </select>
     </div>
@@ -538,6 +544,63 @@ function startApp(){
   document.getElementById('hdr-pib').textContent = 'PIB ' + firma.pib;
   ucitaj();
   setInterval(ucitaj, 10000);
+  pokreniPushNotifikacije();
+}
+
+// ═══════════════════════════════════════
+// PUSH NOTIFIKACIJE (Web Push API)
+// ═══════════════════════════════════════
+const VAPID_PUBLIC_KEY = 'BGhZWYu2LsRdwfTk5qpnrWqJWWCNY5rPHlbKQtI0Dp8EnyGjMF-YC5asmX2J-I2xD1ERyKcf2ValR4NujlGWALU';
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+async function pokreniPushNotifikacije(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)) return; // browser ne podržava
+
+  // Ne dosađuj ako je korisnik već odbio
+  if(Notification.permission === 'denied') return;
+
+  try{
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+
+    // Ako već postoji pretplata, samo osveži je na serveru (za svaki slučaj)
+    let sub = await reg.pushManager.getSubscription();
+
+    if(!sub){
+      // Ne traži dozvolu odmah automatski — sačekaj da korisnik prvo vidi portal, pa pitaj posle kratke pauze
+      setTimeout(async () => {
+        if(Notification.permission === 'granted' || Notification.permission === 'default'){
+          const dozvola = await Notification.requestPermission();
+          if(dozvola !== 'granted') return;
+          try{
+            sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+            });
+            await posaljiPretplatuNaServer(sub);
+            toast('🔔 Notifikacije su uključene!');
+          }catch(e){ console.error('Push subscribe greška:', e); }
+        }
+      }, 2500);
+    } else {
+      posaljiPretplatuNaServer(sub); // osveži na serveru, tiho, bez toast poruke
+    }
+  }catch(e){ console.error('Service Worker greška:', e); }
+}
+
+async function posaljiPretplatuNaServer(sub){
+  try{
+    await fetch(SERVER+'/push-subscribe', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({firma_id: firma.id, firma_naziv: firma.naziv, subscription: sub})
+    });
+  }catch(e){ console.error('Slanje pretplate greška:', e); }
 }
 
 window.addEventListener('load', () => {
@@ -593,11 +656,31 @@ function renderAll(){
     ['popuniGodine', popuniGodine], ['renderPregled', renderPregled], ['renderFakture', renderFakture],
     ['renderKPO', renderKPO], ['renderTroskovnik', renderTroskovnik], ['renderIzvodi', renderIzvodi],
     ['renderPoreska', renderPoreska], ['renderKalendar', renderKalendar], ['proveriNoveFakture', proveriNoveFakture],
+    ['primeniAlateVidljivost', primeniAlateVidljivost],
   ];
   for(const [naziv, fn] of koraci){
     try{ fn(); }
     catch(e){ console.error('Greška u '+naziv+':', e); }
   }
+}
+
+// ── Sakrij tabove koji nisu uključeni za ovu firmu (Finity → Podešavanja → Alati) ──
+function primeniAlateVidljivost(){
+  const s = pd.settings || {};
+  const pravila = [
+    {id:'tab-btn-poreska',    ukljuceno: s.poreske    === 'da'}, // podrazumevano NE
+    {id:'tab-btn-troskovnik', ukljuceno: s.troskovnik === 'da'}, // podrazumevano NE
+    {id:'tab-btn-izvodi',     ukljuceno: s.izvodi     !== 'ne'}, // podrazumevano DA
+  ];
+  pravila.forEach(({id, ukljuceno})=>{
+    const btn = document.getElementById(id);
+    if(!btn) return;
+    btn.style.display = ukljuceno ? '' : 'none';
+    if(!ukljuceno && btn.classList.contains('active')){
+      const prviTab = document.querySelectorAll('.tab')[0];
+      tab('pregled', prviTab);
+    }
+  });
 }
 
 function popuniGodine(){
@@ -618,7 +701,13 @@ function renderPregled(){
   const placene = pd.fakture.filter(f=>(f.status||'').toLowerCase()==='placena').length;
 
   document.getElementById('s-prihod').textContent = fmt(prihod);
-  document.getElementById('s-stanje').textContent = fmt(stanje);
+  if(pratiIzvode()){
+    document.getElementById('s-stanje').textContent = fmt(stanje);
+    document.getElementById('s-stanje-lbl').textContent = 'Stanje računa (RSD)';
+  } else {
+    document.getElementById('s-stanje').textContent = '—';
+    document.getElementById('s-stanje-lbl').textContent = 'Ne dostavlja izvode';
+  }
   document.getElementById('s-fak').textContent    = pd.fakture.length;
   document.getElementById('s-kpo').textContent    = kpo.length;
 
@@ -725,15 +814,33 @@ function rokZaKlijenta(nazivKlijenta){
 // ── STORNIRANE FAKTURE (isto kao Finity: preko stornoOd polja i opisa storno zapisa) ──
 function izracunajStorniraneBrojeve(){
   const set = new Set();
+  // Izvor 1: KPO storno zapisi (pravi se SAMO za paušalce) — stornoOd pokazuje na original
   pd.kpo.forEach(k=>{
     if((k.vrsta||'') !== 'Storno fakture') return;
     const od = String(k.stornoOd||'').trim();
     if(od) set.add(od);
-    // fallback: prepoznavanje iz teksta opisa "Storno fakture <broj>"
     const m = String(k.opis||'').match(/storno\s+fakture\s+(\S+)/i);
     if(m && m[1]) set.add(m[1].trim());
   });
+  // Izvor 2: fakture[] — original dobija status 'Stornirana' (pravi se za SVE forme, i DOO)
+  pd.fakture.forEach(f=>{
+    if((f.status||'').toLowerCase() === 'stornirana') set.add(String(f.br||'').trim());
+    // storno-dokument (novi zapis) ima svoje stornoOd polje koje pokazuje na original
+    const od = String(f.stornoOd||'').trim();
+    if(od) set.add(od);
+  });
+  // Izvor 3: direktna boolean oznaka na KPO zapisu (isto kao Finity _jeStornirana — zaštita za stare/ručno uvezene podatke)
+  pd.kpo.forEach(k=>{
+    if(k.stornirano || k.stornirana){
+      if(k.br) set.add(String(k.br).trim());
+    }
+  });
   return set;
+}
+
+// Da li je fakturski zapis SAM storno-dokument (kreiran da poništi drugi) — ima negativne iznose
+function jeStornoDokument(f){
+  return !!(f && f.stornoOd);
 }
 
 function izracunajOcekivaneProlive(){
@@ -759,9 +866,10 @@ function izracunajOcekivaneProlive(){
   });
 
   const danas = new Date().toISOString().slice(0,10);
+  const nepratiSet = izracunajNepratiBrojeve();
   return [...prometMap.values()]
     .map(p=>{
-      const st = statusZaBroj(p.br, p.iznos, naplaceno);
+      const st = statusZaBroj(p.br, p.iznos, naplaceno, nepratiSet);
       const rokDana = rokZaKlijenta(p.klijent);
       let rokDatum = '';
       if(p.datumIzdavanja){
@@ -772,7 +880,7 @@ function izracunajOcekivaneProlive(){
       const dana = rokDatum ? Math.abs(Math.round((new Date(danas)-new Date(rokDatum))/86400000)) : 0;
       return {...p, datum:rokDatum, st, kasni, dana, rokDana, preostalo: st.ostatak!=null?st.ostatak:p.iznos};
     })
-    .filter(x=>x.st.cls!=='ok')
+    .filter(x=>x.st.cls==='no' || x.st.cls==='part')
     .sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
 }
 
@@ -788,11 +896,29 @@ function izracunajStatuse(){
   return naplaceno;
 }
 
-function statusZaBroj(br, ukupanIznos, naplaceno){
+// Ručno obeleženo dugmetom "Ne prati se" na KPO zapisu u Finity (k.nePrati) — najviši prioritet, isto kao Finity kpoStatus()
+function izracunajNepratiBrojeve(){
+  const set = new Set();
+  pd.kpo.forEach(k=>{
+    if(k.nePrati && k.br) set.add(String(k.br).trim());
+  });
+  return set;
+}
+
+function pratiIzvode(){
+  // Podrazumevano DA (prati se) — sakriva se samo eksplicitnim 'ne' (isto kao Finity)
+  return (pd.settings && pd.settings.izvodi) !== 'ne';
+}
+
+function statusZaBroj(br, ukupanIznos, naplaceno, nepratiSet){
+  if(nepratiSet && nepratiSet.has(String(br||'').trim())){
+    return {label:'Ne prati se', cls:'nt', placeno:0, ostatak:ukupanIznos};
+  }
   const placeno = naplaceno[br] || 0;
   const ostatak = Math.round((ukupanIznos - placeno)*100)/100;
   if(ostatak <= 0.5) return {label:'Izmireno', cls:'ok', placeno};
   if(placeno > 0.5) return {label:'Delimično', cls:'part', placeno, ostatak};
+  if(!pratiIzvode()) return {label:'Ne prati se', cls:'nt', placeno:0, ostatak};
   return {label:'Neizmireno', cls:'no', placeno:0, ostatak};
 }
 
@@ -818,12 +944,14 @@ function renderFakture(){
   const fil = document.getElementById('fak-fil').value;
   const naplaceno = izracunajStatuse();
   const stornirano = izracunajStorniraneBrojeve();
-  const jeStorno = f => (f.status||'').toLowerCase()==='storno' || stornirano.has(f.br);
+  const nepratiSet = izracunajNepratiBrojeve();
+  const jeStorno = f => (f.status||'').toLowerCase()==='stornirana' || jeStornoDokument(f) || stornirano.has(f.br);
   let lista = [...pd.fakture].sort((a,b)=> (b.datum||'').localeCompare(a.datum||'') || (b.br||'').localeCompare(a.br||''));
 
-  if(fil==='izdata')   lista=lista.filter(f=>(f.status||'').toLowerCase()==='izdata' && !jeStorno(f));
-  else if(fil==='placena')  lista=lista.filter(f=> !jeStorno(f) && statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno).cls==='ok');
-  else if(fil==='neplacena')lista=lista.filter(f=> !jeStorno(f) && statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno).cls!=='ok');
+  if(fil==='izdata')   lista=lista.filter(f=>(f.status||'').toLowerCase()==='izdata' && !jeStorno(f) && !nepratiSet.has(f.br));
+  else if(fil==='placena')  lista=lista.filter(f=> !jeStorno(f) && statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno,nepratiSet).cls==='ok');
+  else if(fil==='neplacena')lista=lista.filter(f=> !jeStorno(f) && ['no','part'].includes(statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno,nepratiSet).cls));
+  else if(fil==='neprati') lista=lista.filter(f=> !jeStorno(f) && statusZaBroj(f.br,parseFloat(f.ukupno||0),naplaceno,nepratiSet).cls==='nt');
   else if(fil==='storno')  lista=lista.filter(f=>jeStorno(f));
 
   document.getElementById('fak-br').textContent=`Fakture (${lista.length})`;
@@ -832,9 +960,11 @@ function renderFakture(){
   document.getElementById('fak-list').innerHTML=lista.slice(0,60).map(f=>{
     const iz=parseFloat(f.ukupno||0);
     const storno = jeStorno(f);
-    const st = statusZaBroj(f.br, iz, naplaceno);
+    const st = statusZaBroj(f.br, iz, naplaceno, nepratiSet);
     let chip,bg,ic;
-    if(storno){ chip='<span class="ch chr">⛔ Storno</span>';bg='#FDEDEC';ic='⛔'; }
+    // "Ne prati se" ima najviši prioritet — isto kao Finity kpoStatus()
+    if(st.cls==='nt'){ chip='<span class="ch chn">➖ Ne prati se</span>';bg='#F0F0F2';ic='➖'; }
+    else if(storno){ chip='<span class="ch chr">⛔ Storno</span>';bg='#FDEDEC';ic='⛔'; }
     else if(st.cls==='ok'){ chip='<span class="ch chg">✅ Izmirena</span>';bg='#E8F8F1';ic='✅'; }
     else if(st.cls==='part'){ chip=`<span class="ch cho">◐ Delimično (${fmt(st.placeno)})</span>`;bg='#FEF9E7';ic='◐'; }
     else { chip='<span class="ch cho">⏳ Neizmirena</span>';bg='#FEF9E7';ic='⏳'; }
@@ -861,6 +991,7 @@ function renderFakture(){
 function renderKPO(){
   const year = document.getElementById('kpo-year').value;
   const naplaceno = izracunajStatuse();
+  const nepratiSet = izracunajNepratiBrojeve();
   let lista = [...pd.kpo].sort((a,b)=> (b.dat||'').localeCompare(a.dat||'') || (b.rb||0)-(a.rb||0));
   if(year!=='sve') lista=lista.filter(k=>(k.dat||'').startsWith(year));
 
@@ -874,9 +1005,11 @@ function renderKPO(){
   document.getElementById('kpo-list').innerHTML=lista.slice(0,60).map(k=>{
     const iz=parseFloat(k.iz||k.uk||0);
     const jeStorno = (k.vrsta||'')==='Storno fakture' || iz<0 || stornirano.has(k.br);
-    const st = statusZaBroj(k.br, iz, naplaceno);
+    const st = statusZaBroj(k.br, iz, naplaceno, nepratiSet);
     let statusHtml, dotColor;
-    if(jeStorno){ statusHtml='<span style="color:#96A3B5">⛔ Storno</span>'; dotColor='#96A3B5'; }
+    // "Ne prati se" ima najviši prioritet — isto kao Finity kpoStatus() (proverava k.nePrati pre storna)
+    if(st.cls==='nt'){ statusHtml='<span style="color:#8A8F98">➖ Ne prati se</span>'; dotColor='#8A8F98'; }
+    else if(jeStorno){ statusHtml='<span style="color:#96A3B5">⛔ Storno</span>'; dotColor='#96A3B5'; }
     else if(st.cls==='ok'){ statusHtml='<span style="color:var(--green)">✅ Izmireno</span>'; dotColor='var(--green)'; }
     else if(st.cls==='part'){ statusHtml=`<span style="color:var(--orange)">◐ Delimično (${fmt(st.placeno)})</span>`; dotColor='var(--orange)'; }
     else{ statusHtml='<span style="color:var(--orange)">⏳ Neizmireno</span>'; dotColor='var(--orange)'; }
@@ -903,6 +1036,14 @@ const TROSAK_ICONS = {'Bankarske provizije':'🏦','Porezi i doprinosi':'🏛️
   'Doprinos nezaposlenost':'🛡️','Podizanje dobiti':'💵','Dobavljači':'🛒','Zakup':'🏠','Ostalo':'📦','Bez kategorije':'❔'};
 
 function renderTroskovnik(){
+  if(!pratiIzvode()){
+    document.getElementById('tr-ukupno').textContent = '—';
+    document.getElementById('tr-kat').innerHTML = '<div class="empty"><div class="empty-ic">💸</div><div class="empty-t">Ovaj klijent ne dostavlja izvode, pa se troškovi ne mogu izvući automatski.</div></div>';
+    document.getElementById('tr-stavke-naslov').textContent = 'Stavke troškova';
+    document.getElementById('tr-stavke').innerHTML = '';
+    troskovStavkeSve = [];
+    return;
+  }
   // Pokupi troškove iz stavki izvoda — koristi TAČNO polje trosakTip (isto kao Finity)
   const kategorije = {};
   let ukupno = 0;
@@ -939,22 +1080,28 @@ function renderTroskovnik(){
   filterEl.innerHTML = '<option value="sve">Sve kategorije</option>' + sveKat.map(k=>`<option value="${k}">${k}</option>`).join('');
   if(sveKat.includes(trenutna) || trenutna==='sve') filterEl.value = trenutna;
 
-  // Kategorije — kartice, klik postavlja filter
+  // Kategorije — kartice, klik postavlja filter (klik na već aktivnu vraća na "sve")
+  const aktivniFilter = document.getElementById('tr-kat-filter').value;
   const katSorted = Object.entries(kategorije).sort((a,b)=>b[1]-a[1]);
   document.getElementById('tr-kat').innerHTML = katSorted.length===0
     ? '<div class="empty"><div class="empty-ic">💸</div><div class="empty-t">Nema evidentiranih troškova</div></div>'
-    : katSorted.map(([k,v])=>`<div class="tr-item" style="cursor:pointer" onclick="postaviTroskovFilter('${k.replace(/'/g,"\\'")}')">
-        <div class="tr-ic" style="background:var(--slate)">${TROSAK_ICONS[k]||'📦'}</div>
-        <div class="tr-nm">${k}</div>
+    : katSorted.map(([k,v])=>{
+        const aktivna = k===aktivniFilter;
+        return `<div class="tr-item" style="cursor:pointer;${aktivna?'background:var(--goldpale);border-radius:10px;margin:0 -6px;padding:8px 6px':''}" onclick="postaviTroskovFilter('${k.replace(/'/g,"\\'")}')">
+        <div class="tr-ic" style="background:${aktivna?'#fff':'var(--slate)'}">${TROSAK_ICONS[k]||'📦'}</div>
+        <div class="tr-nm" style="${aktivna?'font-weight:800':''}">${k}${aktivna?' ✓':''}</div>
         <div class="tr-iz">${fmt(v)} RSD</div>
-      </div>`).join('');
+      </div>`;
+      }).join('');
 
   renderTroskovStavke();
 }
 
 function postaviTroskovFilter(kat){
-  document.getElementById('tr-kat-filter').value = kat;
-  renderTroskovStavke();
+  const filterEl = document.getElementById('tr-kat-filter');
+  // klik na već aktivnu kategoriju — vrati na "sve" (toggle-off)
+  filterEl.value = (filterEl.value === kat) ? 'sve' : kat;
+  renderTroskovnik(); // osveži i kartice (da se markira nova aktivna) i listu ispod
   document.getElementById('tr-stavke').scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 
@@ -970,7 +1117,7 @@ function renderTroskovStavke(){
 
   const prikaz = filter==='sve' ? lista.slice(0,25) : lista;
 
-  document.getElementById('tr-stavke').innerHTML = prikaz.length===0
+  let html = prikaz.length===0
     ? '<div class="empty-t" style="color:#96A3B5;text-align:center;padding:12px">Nema stavki za ovaj filter</div>'
     : prikaz.map(s=>`<div class="ki">
         <div class="kdot" style="background:var(--red)"></div>
@@ -980,15 +1127,32 @@ function renderTroskovStavke(){
         </div>
         <div class="k-iz" style="color:var(--red)">−${fmt(s.iznos)} RSD</div>
       </div>`).join('');
+
   if(filter==='sve' && lista.length>25){
-    document.getElementById('tr-stavke').innerHTML += `<div style="text-align:center;font-size:11px;color:#96A3B5;padding-top:8px">+ još ${lista.length-25} — izaberite kategoriju za kompletan prikaz</div>`;
+    html += `<div style="text-align:center;font-size:11px;color:#96A3B5;padding-top:8px">+ još ${lista.length-25} — izaberite kategoriju za kompletan prikaz</div>`;
   }
+
+  if(prikaz.length>0){
+    const suma = prikaz.reduce((a,s)=>a+s.iznos,0);
+    html += `<div class="ir" style="border-top:1.5px solid var(--brd);margin-top:8px;padding-top:10px">
+      <span class="il" style="font-weight:700;color:var(--navy)">UKUPNO${filter==='sve'?' (prikazano)':''}</span>
+      <span class="iv" style="font-size:14px;color:var(--red)">−${fmt(suma)} RSD</span>
+    </div>`;
+  }
+
+  document.getElementById('tr-stavke').innerHTML = html;
 }
 
 
 // ── IZVODI ──
 function renderIzvodi(){
   const izv = pd.izv;
+  if(!pratiIzvode()){
+    document.getElementById('izv-stanje').textContent='—';
+    document.getElementById('izv-br').textContent='—';
+    document.getElementById('izv-lista').innerHTML='<div class="empty"><div class="empty-ic">🏦</div><div class="empty-t">Ovaj klijent ne dostavlja izvode.</div></div>';
+    return;
+  }
   if(!izv.length){
     document.getElementById('izv-stanje').textContent='—';
     document.getElementById('izv-br').textContent='—';
@@ -1078,7 +1242,7 @@ function renderPoreska(){
     const posGod = najnovijaGodina(godine);
     const tekuca = posGod ? (godine[posGod]||{}) : {};
     const stanje = parseFloat(tekuca.stanje||0);
-    const bop = parseFloat(tekuca.bop||0);
+    const bop = (tekuca.bop||'').toString().trim(); // broj odobrenja za plaćanje — string, ne iznos
     const rok = d.rok || '';
 
     let rokBoja = 'g', rokTxt = rok ? 'Rok: '+srpD(rok) : 'Rok nije unet';
@@ -1093,7 +1257,7 @@ function renderPoreska(){
     const istorija = sveGod.length>1 ? `
       <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--brd)">
         ${sveGod.map(g=>`<div class="ir" style="padding:4px 0">
-          <span class="il" style="font-size:11px">${g}. — BOP ${fmt(godine[g].bop||0)}</span>
+          <span class="il" style="font-size:11px">${g}. ${godine[g].bop?('— BOP: '+godine[g].bop):''}</span>
           <span class="iv" style="font-size:11px">${fmt(godine[g].stanje||0)} RSD</span>
         </div>`).join('')}
       </div>` : '';
@@ -1102,7 +1266,7 @@ function renderPoreska(){
       <div class="por-ic" style="background:${k.bg}">${k.ic}</div>
       <div class="por-inf">
         <div class="por-nm">${k.naziv}</div>
-        <div class="por-sub">${posGod ? posGod+'. — BOP: '+fmt(bop)+' RSD' : 'Nema unetih podataka'}</div>
+        <div class="por-sub">${bop ? 'BOP: '+bop : (posGod ? posGod+'. godina' : 'Nema unetih podataka')}</div>
       </div>
       <div class="por-val">
         <div class="por-stanje" style="color:${stanje>0?'var(--red)':'var(--green)'}">${fmt(stanje)} RSD</div>
@@ -1194,6 +1358,7 @@ function agregirajKomitente(){
   const jeStorno = k => (k.vrsta||'')==='Storno fakture' || parseFloat(k.iz||k.uk||0) < 0;
   const stornirano = izracunajStorniraneBrojeve();
   const naplaceno = izracunajStatuse();
+  const nepratiSet = izracunajNepratiBrojeve();
   const map = new Map();
 
   pd.kpo.forEach(k=>{
@@ -1203,9 +1368,9 @@ function agregirajKomitente(){
     if(!map.has(naziv)) map.set(naziv, {naziv, ukupno:0, brojDok:0, fakture:[]});
     const c = map.get(naziv);
     const iznos = parseFloat(k.iz||k.uk||0);
-    c.ukupno += iznos;
+    c.ukupno += iznos; // prihod se i dalje računa — "ne prati se" utiče samo na status naplate, ne na sam prihod
     c.brojDok++;
-    const st = statusZaBroj(k.br, iznos, naplaceno);
+    const st = statusZaBroj(k.br, iznos, naplaceno, nepratiSet);
     c.fakture.push({br:k.br||'—', datum:k.dat||'', iznos, opis:k.opis||k.vrsta||'', status:st});
   });
 
@@ -1265,6 +1430,7 @@ function otvoriKomitenta(idx, q){
         let chip,ic,bg;
         if(f.status.cls==='ok'){chip='<span class="ch chg">✅ Izmireno</span>';ic='✅';bg='#E8F8F1';}
         else if(f.status.cls==='part'){chip=`<span class="ch cho">◐ Delimično</span>`;ic='◐';bg='#FEF9E7';}
+        else if(f.status.cls==='nt'){chip='<span class="ch chn">➖ Ne prati se</span>';ic='➖';bg='#F0F0F2';}
         else{chip='<span class="ch cho">⏳ Neizmireno</span>';ic='⏳';bg='#FEF9E7';}
         const izvodInfo = (f.status.cls==='ok'||f.status.cls==='part') ? opisIzvodaZaBroj(f.br) : '';
         return `<div class="fi">

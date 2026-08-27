@@ -5,12 +5,67 @@ Kompatibilan sa Finity aplikacijom (akcije: ping, save, load)
 Railway hosting — čuva podatke u JSON fajlovima
 """
 from flask import Flask, request, jsonify, render_template_string
-import json, os
-from datetime import datetime
+import json, os, smtplib
+from email.mime.text import MIMEText
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
 SYNC_TOKEN = os.environ.get('FINITY_TOKEN', 'pausalpro2026')
+
+# ─── EMAIL PODEŠAVANJA (Gmail SMTP) ───
+GMAIL_USER = os.environ.get('GMAIL_USER', 'finity.knjigovodstvu@gmail.com')
+GMAIL_APP_PASSWORD = os.environ.get('GMAIL_APP_PASSWORD', '')
+
+# ─── PUSH NOTIFIKACIJE (Web Push / VAPID) ───
+VAPID_PUBLIC_KEY  = os.environ.get('VAPID_PUBLIC_KEY',  'BGhZWYu2LsRdwfTk5qpnrWqJWWCNY5rPHlbKQtI0Dp8EnyGjMF-YC5asmX2J-I2xD1ERyKcf2ValR4NujlGWALU')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', 'yaUvKIKPNy3t8o2wPBk15aOUi1cssLWmEcDz_1EDOwE')
+VAPID_CLAIMS = {'sub': f'mailto:{GMAIL_USER}'}
+PUSH_SUBS_FAJL = '/tmp/push_subs.json'
+
+def ucitaj_push_subs():
+    if not os.path.exists(PUSH_SUBS_FAJL): return {}
+    try: return json.loads(open(PUSH_SUBS_FAJL, encoding='utf-8').read())
+    except: return {}
+
+def sacuvaj_push_subs(subs):
+    open(PUSH_SUBS_FAJL, 'w', encoding='utf-8').write(json.dumps(subs, ensure_ascii=False))
+
+def posalji_push_firmi(firma_id, naslov, telo, url='/portal', tag='finity-notif'):
+    """Šalje push notifikaciju svim uređajima pretplaćenim za datu firmu. Briše nevažeće pretplate."""
+    try:
+        from pywebpush import webpush, WebPushException
+    except ImportError:
+        print('pywebpush nije instaliran — push notifikacije preskočene')
+        return
+
+    subs = ucitaj_push_subs()
+    lista = subs.get(firma_id, [])
+    if not lista: return
+
+    jos_vazece = []
+    for sub in lista:
+        try:
+            webpush(
+                subscription_info=sub,
+                data=json.dumps({'naslov': naslov, 'telo': telo, 'url': url, 'tag': tag}, ensure_ascii=False),
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims=dict(VAPID_CLAIMS),
+            )
+            jos_vazece.append(sub)
+        except WebPushException as e:
+            # 410 Gone / 404 = pretplata više ne postoji na uređaju, izbaci je
+            if e.response is not None and e.response.status_code in (404, 410):
+                print(f'Push pretplata istekla za {firma_id}, uklanjam.')
+            else:
+                print('Push greška:', e)
+                jos_vazece.append(sub)  # zadrži za sledeći pokušaj ako je privremena greška
+        except Exception as e:
+            print('Push nepoznata greška:', e)
+            jos_vazece.append(sub)
+
+    subs[firma_id] = jos_vazece
+    sacuvaj_push_subs(subs)
 DATA_DIR   = '/tmp'  # Railway dozvoljava pisanje u /tmp
 DATA_FAJL  = os.path.join(DATA_DIR, 'finity_data.json')
 LOG_FAJL   = os.path.join(DATA_DIR, 'sync_log.json')
@@ -74,6 +129,12 @@ def finity_sync():
             s = finity_data.get('settings', {})
             firma_naziv = s.get('naziv') or s.get('nazivPun') or 'Nepoznato'
         except: pass
+
+        # ── PROVERA NOVIH FAKTURA (pre upisa, dok još imamo pristup starim podacima) ──
+        try:
+            obradi_nove_fakture_i_posalji_push(finity_data)
+        except Exception as e:
+            print('Greska pri detekciji novih faktura:', e)
 
         # Sačuvaj podatke
         open(DATA_FAJL, 'w', encoding='utf-8').write(data_str)
@@ -400,6 +461,230 @@ setInterval(load,8000);
 def dashboard():
     return render_template_string(DASHBOARD)
 
+def _parsiraj(v):
+    """Parsira vrednost koja može biti JSON string ili već parsiran objekat."""
+    if isinstance(v, str):
+        try: return json.loads(v)
+        except: return None
+    return v
+
+def izvuci_fakture(fd):
+    v = _parsiraj((fd or {}).get('fakture', []))
+    return v if isinstance(v, list) else []
+
+def izvuci_firme_mapu(keys):
+    v = _parsiraj((keys or {}).get('knjigo_firme', []))
+    if not isinstance(v, list): return {}
+    return {f.get('id'): f.get('naziv','Nepoznato') for f in v if isinstance(f, dict)}
+
+def _normalizuj_naziv(s):
+    s = (s or '').strip().lower()
+    for a, b in [('š','s'),('đ','dj'),('č','c'),('ć','c'),('ž','z')]:
+        s = s.replace(a, b)
+    return s
+
+def _rok_za_klijenta(naziv, klijenti):
+    nn = _normalizuj_naziv(naziv)
+    if not nn: return 60
+    for k in klijenti:
+        if isinstance(k, dict) and _normalizuj_naziv(k.get('naziv')) == nn:
+            try:
+                r = int(k.get('rok'))
+                if r >= 0: return r
+            except: pass
+    return 60  # podrazumevano, isto kao Finity i portal
+
+def _izracunaj_stornirane_brojeve(fd):
+    kpo = fd.get('kpo') or []
+    fakture = fd.get('fakture') or []
+    stornirano = set()
+    for k in kpo:
+        if not isinstance(k, dict): continue
+        if (k.get('vrsta') or '') == 'Storno fakture':
+            od = str(k.get('stornoOd') or '').strip()
+            if od: stornirano.add(od)
+        if k.get('stornirano') or k.get('stornirana'):
+            if k.get('br'): stornirano.add(str(k.get('br')).strip())
+    for f in fakture:
+        if not isinstance(f, dict): continue
+        if (f.get('status') or '').lower() == 'stornirana':
+            stornirano.add(str(f.get('br') or '').strip())
+        od = str(f.get('stornoOd') or '').strip()
+        if od: stornirano.add(od)
+    return stornirano
+
+def _neizmirene_fakture_sa_rokom(fd, danas):
+    """Server-side ekvivalent portalove izracunajOcekivaneProlive() — vraća listu neizmirenih
+    faktura/KPO stavki sa izračunatim rokom dospeća (datum izdavanja + rok klijenta)."""
+    kpo = fd.get('kpo') or []
+    fakture = fd.get('fakture') or []
+    klijenti = fd.get('klijenti') or []
+    naplate = fd.get('naplate') or []
+
+    stornirano = _izracunaj_stornirane_brojeve(fd)
+    nema_prati = {str(k.get('br')).strip() for k in kpo if isinstance(k, dict) and k.get('nePrati') and k.get('br')}
+
+    naplaceno = {}
+    for n in naplate:
+        if not isinstance(n, dict): continue
+        br = n.get('faktBr') or ''
+        if not br: continue
+        try: naplaceno[br] = naplaceno.get(br, 0) + float(n.get('iznos') or 0)
+        except: pass
+
+    promet = {}
+    for k in kpo:
+        if not isinstance(k, dict): continue
+        if (k.get('vrsta') or '') == 'Storno fakture' or float(k.get('iz') or k.get('uk') or 0) < 0: continue
+        br = k.get('br') or ''
+        if not br or br in stornirano: continue
+        promet[br] = {'br': br, 'klijent': k.get('kl') or '—', 'iznos': float(k.get('iz') or k.get('uk') or 0), 'datum': k.get('dat') or ''}
+    for f in fakture:
+        if not isinstance(f, dict): continue
+        if (f.get('status') or '').lower() == 'storno': continue
+        br = f.get('br') or ''
+        if not br or br in stornirano or br in promet: continue
+        promet[br] = {'br': br, 'klijent': f.get('klijentNaziv') or '—', 'iznos': float(f.get('ukupno') or 0), 'datum': f.get('datum') or ''}
+
+    rezultat = []
+    for br, p in promet.items():
+        if br in nema_prati: continue  # "ne prati se" — isključeno, isto kao portal
+        placeno = naplaceno.get(br, 0)
+        ostatak = round(p['iznos'] - placeno, 2)
+        if ostatak <= 0.5: continue  # izmireno
+
+        rok_dana = _rok_za_klijenta(p['klijent'], klijenti)
+        rok_datum = None
+        if p['datum']:
+            try:
+                rok_datum = (datetime.strptime(p['datum'], '%Y-%m-%d') + timedelta(days=rok_dana)).date()
+            except: pass
+        if not rok_datum: continue
+
+        dana = (rok_datum - danas).days
+        rezultat.append({'br': br, 'klijent': p['klijent'], 'ostatak': ostatak, 'rok_datum': rok_datum, 'dana': dana})
+    return rezultat
+
+def obradi_nove_fakture_i_posalji_push(nova_data):
+    """Uporedi novo-poslate podatke sa prethodno sačuvanim i pošalji push za svaku novu fakturu."""
+    stare_keys = {}
+    if os.path.exists(DATA_FAJL):
+        stari = _parsiraj(open(DATA_FAJL, encoding='utf-8').read())
+        if isinstance(stari, dict):
+            stare_keys = stari.get('keys', stari)
+
+    nove_keys = nova_data.get('keys', nova_data) if isinstance(nova_data, dict) else {}
+    if not isinstance(nove_keys, dict): return
+
+    firme_mapa = izvuci_firme_mapu(nove_keys)
+
+    for k, v in nove_keys.items():
+        if not isinstance(k, str) or not k.startswith('knjigo_rs_v41_'): continue
+        fid = k.replace('knjigo_rs_v41_', '')
+        nova_fd = _parsiraj(v)
+        if not isinstance(nova_fd, dict): continue
+        nove_fakture = izvuci_fakture(nova_fd)
+
+        stara_fd = _parsiraj(stare_keys.get(k)) if stare_keys.get(k) is not None else {}
+        stare_fakture = izvuci_fakture(stara_fd if isinstance(stara_fd, dict) else {})
+
+        if len(nove_fakture) <= len(stare_fakture): continue
+
+        stari_brojevi = {f.get('br') for f in stare_fakture if isinstance(f, dict)}
+        nove_stavke = [f for f in nove_fakture if isinstance(f, dict) and f.get('br') not in stari_brojevi]
+
+        for nf in nove_stavke[:3]:  # ograniči da ne zaspemo notifikacijama pri masovnom uvozu
+            try:
+                iznos = int(float(nf.get('ukupno', 0) or 0))
+            except: iznos = 0
+            posalji_push_firmi(
+                fid,
+                '📄 Nova faktura izdata',
+                f"{nf.get('br','')} — {nf.get('klijentNaziv','')} — {iznos:,} RSD".replace(',', '.'),
+                url='/portal', tag='nova-faktura'
+            )
+
+# ─── PRETPLATA NA PUSH NOTIFIKACIJE (poziva portal.html jednom po uređaju) ───
+@app.route('/push-subscribe', methods=['OPTIONS'])
+def push_subscribe_opt(): return '', 200
+
+@app.route('/push-subscribe', methods=['POST'])
+def push_subscribe():
+    data = request.get_json(force=True, silent=True) or {}
+    firma_id = data.get('firma_id', '')
+    subscription = data.get('subscription')
+    if not firma_id or not subscription:
+        return jsonify({'ok': False, 'poruka': 'Nedostaju podaci.'}), 400
+
+    subs = ucitaj_push_subs()
+    lista = subs.get(firma_id, [])
+    endpoint = subscription.get('endpoint')
+    lista = [s for s in lista if s.get('endpoint') != endpoint]  # izbegni duplikate
+    lista.append(subscription)
+    subs[firma_id] = lista
+    sacuvaj_push_subs(subs)
+    return jsonify({'ok': True, 'poruka': 'Pretplata sacuvana.'})
+
+# ─── DNEVNA PROVERA ROKOVA (poziva se preko besplatnog eksternog cron servisa, npr. cron-job.org) ───
+@app.route('/proveri-podsetnike', methods=['GET', 'POST'])
+def proveri_podsetnike():
+    if not os.path.exists(DATA_FAJL):
+        return jsonify({'ok': True, 'poruka': 'Nema podataka.', 'poslato': 0})
+
+    sve = _parsiraj(open(DATA_FAJL, encoding='utf-8').read())
+    keys = sve.get('keys', sve) if isinstance(sve, dict) else {}
+    if not isinstance(keys, dict):
+        return jsonify({'ok': False, 'poruka': 'Neispravan format podataka.'}), 500
+
+    danas = datetime.now().date()
+    poslato = 0
+    PRAG_DANA = (3, 1, 0)  # podseti 3 dana pre, 1 dan pre, i na sam dan
+
+    for k, v in keys.items():
+        if not isinstance(k, str) or not k.startswith('knjigo_rs_v41_'): continue
+        fid = k.replace('knjigo_rs_v41_', '')
+        fd = _parsiraj(v)
+        if not isinstance(fd, dict): continue
+
+        # Poreske obaveze
+        porezi = fd.get('poreskeObaveze') or {}
+        if isinstance(porezi, dict):
+            for kat, info in porezi.items():
+                if not isinstance(info, dict): continue
+                rok = info.get('rok')
+                if not rok: continue
+                try: rok_datum = datetime.strptime(rok, '%Y-%m-%d').date()
+                except: continue
+                dana = (rok_datum - danas).days
+                if dana in PRAG_DANA:
+                    naslov = '🚨 Rok je danas' if dana == 0 else f'⏰ Rok za {dana} dana'
+                    posalji_push_firmi(fid, naslov, f'{kat.upper()} — plaćanje do {rok}', tag=f'porez-{kat}-{rok}')
+                    poslato += 1
+
+        # Ručne kalendar stavke
+        for stavka in (fd.get('kalendarStavke') or []):
+            if not isinstance(stavka, dict): continue
+            datum = stavka.get('datum')
+            if not datum: continue
+            try: d = datetime.strptime(datum, '%Y-%m-%d').date()
+            except: continue
+            dana = (d - danas).days
+            if dana in PRAG_DANA:
+                naslov = '🔔 Podsetnik za danas' if dana == 0 else f'📅 Podsetnik za {dana} dana'
+                posalji_push_firmi(fid, naslov, stavka.get('naziv', 'Obaveza'), tag=f"kal-{stavka.get('id','x')}")
+                poslato += 1
+
+        # Dospeća neizmirenih faktura (rok = datum izdavanja + rok klijenta, isto kao portal)
+        for x in _neizmirene_fakture_sa_rokom(fd, danas):
+            if x['dana'] in PRAG_DANA:
+                naslov = '🚨 Faktura dospeva danas' if x['dana'] == 0 else f"⏰ Faktura dospeva za {x['dana']} dana"
+                iznos_txt = f"{int(x['ostatak']):,} RSD".replace(',', '.')
+                posalji_push_firmi(fid, naslov, f"{x['br']} — {x['klijent']} — {iznos_txt}",
+                    tag=f"fakt-{x['br']}-{x['rok_datum']}")
+                poslato += 1
+
+    return jsonify({'ok': True, 'poslato': poslato})
+
 @app.route('/portal')
 def portal():
     """Klijentski portal — link koji dajete klijentima."""
@@ -408,6 +693,51 @@ def portal():
             return f.read()
     except FileNotFoundError:
         return '<h2>Portal fajl nije pronađen. Uploadujte portal.html zajedno sa finity_sync.py na GitHub.</h2>', 404
+
+@app.route('/sw.js')
+def service_worker():
+    """Service Worker — mora biti servisan sa root putanje da bi imao pun opseg (scope)."""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), 'sw.js'), encoding='utf-8') as f:
+            return f.read(), 200, {'Content-Type': 'application/javascript'}
+    except FileNotFoundError:
+        return '// sw.js nije pronađen na serveru', 404, {'Content-Type': 'application/javascript'}
+
+# ─── CHAT PORUKA → EMAIL (server-side, bez trećih servisa) ───
+@app.route('/chat-poruka', methods=['OPTIONS'])
+def chat_poruka_opt(): return '', 200
+
+@app.route('/chat-poruka', methods=['POST'])
+def chat_poruka():
+    data = request.get_json(force=True, silent=True) or {}
+    firma_naziv = data.get('firma_naziv', 'Nepoznata firma')
+    firma_pib = data.get('firma_pib', '')
+    poruka = data.get('poruka', '')
+
+    if not poruka:
+        return jsonify({'ok': False, 'poruka': 'Prazna poruka.'}), 400
+
+    if not GMAIL_APP_PASSWORD:
+        # Email nije podešen na serveru — samo zabeleži u log da se ne izgubi zahtev
+        print(f"[CHAT — EMAIL NIJE PODESEN] {firma_naziv} ({firma_pib}): {poruka}")
+        return jsonify({'ok': True, 'poruka': 'Zahtev zabelezen (email nije podesen na serveru).'})
+
+    try:
+        telo = f"Firma: {firma_naziv}\nPIB: {firma_pib}\nVreme: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\nPoruka:\n{poruka}"
+        msg = MIMEText(telo, _charset='utf-8')
+        msg['Subject'] = f'Finity Portal — zahtev od {firma_naziv}'
+        msg['From'] = GMAIL_USER
+        msg['To'] = GMAIL_USER
+
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            server.send_message(msg)
+
+        print(f"[CHAT] Email poslat — {firma_naziv}")
+        return jsonify({'ok': True, 'poruka': 'Email poslat!'})
+    except Exception as e:
+        print('EMAIL GRESKA:', e)
+        return jsonify({'ok': False, 'poruka': 'Greska pri slanju emaila.'}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
