@@ -12,6 +12,13 @@ app = Flask(__name__)
 
 SYNC_TOKEN = os.environ.get('FINITY_TOKEN', 'pausalpro2026')
 
+# ─── SKLADIŠTE PODATAKA ───
+# Ako je povezan Railway Volume, RAILWAY_VOLUME_MOUNT_PATH je automatski dostupan
+# i svi podaci se čuvaju TRAJNO (preživljava redeploy). Bez Volume-a, pada nazad
+# na /tmp koji Railway briše pri svakom redeploy-u (privremeno rešenje).
+DATA_DIR = os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', '/tmp')
+os.makedirs(DATA_DIR, exist_ok=True)
+
 # ─── EMAIL PODEŠAVANJA (Resend — HTTPS API, ne SMTP jer Railway blokira SMTP portove) ───
 GMAIL_USER = os.environ.get('GMAIL_USER', 'finity.knjigovodstvo@gmail.com')
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
@@ -20,7 +27,7 @@ RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 VAPID_PUBLIC_KEY  = os.environ.get('VAPID_PUBLIC_KEY',  'BGhZWYu2LsRdwfTk5qpnrWqJWWCNY5rPHlbKQtI0Dp8EnyGjMF-YC5asmX2J-I2xD1ERyKcf2ValR4NujlGWALU')
 VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', 'yaUvKIKPNy3t8o2wPBk15aOUi1cssLWmEcDz_1EDOwE')
 VAPID_CLAIMS = {'sub': f'mailto:{GMAIL_USER}'}
-PUSH_SUBS_FAJL = '/tmp/push_subs.json'
+PUSH_SUBS_FAJL = os.path.join(DATA_DIR, 'push_subs.json')
 
 def ucitaj_push_subs():
     if not os.path.exists(PUSH_SUBS_FAJL): return {}
@@ -65,7 +72,6 @@ def posalji_push_firmi(firma_id, naslov, telo, url='/portal', tag='finity-notif'
 
     subs[firma_id] = jos_vazece
     sacuvaj_push_subs(subs)
-DATA_DIR   = '/tmp'  # Railway dozvoljava pisanje u /tmp
 DATA_FAJL  = os.path.join(DATA_DIR, 'finity_data.json')
 LOG_FAJL   = os.path.join(DATA_DIR, 'sync_log.json')
 
@@ -702,47 +708,176 @@ def service_worker():
     except FileNotFoundError:
         return '// sw.js nije pronađen na serveru', 404, {'Content-Type': 'application/javascript'}
 
-# ─── CHAT PORUKA → EMAIL (preko Resend HTTP API — radi čak i kad hosting blokira SMTP portove) ───
+# ─── DVOSMERNI CHAT — trajno čuvanje poruka + email obaveštenje ───
+CHAT_TOKEN = os.environ.get('ADMIN_TOKEN', 'racunovodja2026')
+CHAT_FAJL = os.path.join(DATA_DIR, 'chat_poruke.json')
+
+def ucitaj_chat():
+    if not os.path.exists(CHAT_FAJL): return {}
+    try: return json.loads(open(CHAT_FAJL, encoding='utf-8').read())
+    except: return {}
+
+def sacuvaj_chat(sve):
+    open(CHAT_FAJL, 'w', encoding='utf-8').write(json.dumps(sve, ensure_ascii=False))
+
+def posalji_email_o_poruci(firma_naziv, firma_pib, tekst):
+    if not RESEND_API_KEY:
+        print(f"[CHAT — EMAIL NIJE PODESEN] {firma_naziv} ({firma_pib}): {tekst}")
+        return
+    try:
+        telo = f"Firma: {firma_naziv}<br>PIB: {firma_pib}<br>Vreme: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br><br>Poruka:<br>{tekst}"
+        r = requests.post(
+            'https://api.resend.com/emails',
+            headers={'Authorization': f'Bearer {RESEND_API_KEY}', 'Content-Type': 'application/json'},
+            json={'from': 'Finity Portal <onboarding@resend.dev>', 'to': [GMAIL_USER],
+                  'subject': f'Finity Portal — zahtev od {firma_naziv}', 'html': telo},
+            timeout=10,
+        )
+        if r.status_code >= 300:
+            print('RESEND GRESKA:', r.status_code, r.text)
+        else:
+            print(f"[CHAT] Email poslat preko Resend — {firma_naziv}")
+    except requests.exceptions.RequestException as e:
+        print('RESEND GRESKA (mreza):', e)
+
 @app.route('/chat-poruka', methods=['OPTIONS'])
 def chat_poruka_opt(): return '', 200
 
 @app.route('/chat-poruka', methods=['POST'])
 def chat_poruka():
+    """Klijent šalje poruku (iz portala). Čuva se trajno + šalje email obaveštenje."""
     data = request.get_json(force=True, silent=True) or {}
+    firma_id = data.get('firma_id', '')
     firma_naziv = data.get('firma_naziv', 'Nepoznata firma')
     firma_pib = data.get('firma_pib', '')
     poruka = data.get('poruka', '')
 
-    if not poruka:
-        return jsonify({'ok': False, 'poruka': 'Prazna poruka.'}), 400
+    if not poruka or not firma_id:
+        return jsonify({'ok': False, 'poruka': 'Nedostaju podaci.'}), 400
 
-    if not RESEND_API_KEY:
-        # Email nije podešen na serveru — samo zabeleži u log da se ne izgubi zahtev
-        print(f"[CHAT — EMAIL NIJE PODESEN] {firma_naziv} ({firma_pib}): {poruka}")
-        return jsonify({'ok': True, 'poruka': 'Zahtev zabelezen (email nije podesen na serveru).'})
+    sve = ucitaj_chat()
+    nit = sve.get(firma_id, {'firma_naziv': firma_naziv, 'poruke': []})
+    nit['firma_naziv'] = firma_naziv
+    nit['poruke'].append({'od': 'klijent', 'tekst': poruka, 'vreme': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
+    sve[firma_id] = nit
+    sacuvaj_chat(sve)
 
-    try:
-        telo = f"Firma: {firma_naziv}<br>PIB: {firma_pib}<br>Vreme: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br><br>Poruka:<br>{poruka}"
-        r = requests.post(
-            'https://api.resend.com/emails',
-            headers={'Authorization': f'Bearer {RESEND_API_KEY}', 'Content-Type': 'application/json'},
-            json={
-                'from': 'Finity Portal <onboarding@resend.dev>',
-                'to': [GMAIL_USER],
-                'subject': f'Finity Portal — zahtev od {firma_naziv}',
-                'html': telo,
-            },
-            timeout=10,
-        )
-        if r.status_code >= 300:
-            print('RESEND GRESKA:', r.status_code, r.text)
-            return jsonify({'ok': False, 'poruka': 'Greska pri slanju emaila.'}), 500
+    posalji_email_o_poruci(firma_naziv, firma_pib, poruka)
+    return jsonify({'ok': True, 'poruka': 'Poslato!'})
 
-        print(f"[CHAT] Email poslat preko Resend — {firma_naziv}")
-        return jsonify({'ok': True, 'poruka': 'Email poslat!'})
-    except requests.exceptions.RequestException as e:
-        print('RESEND GRESKA (mreza):', e)
-        return jsonify({'ok': False, 'poruka': 'Greska pri slanju emaila.'}), 500
+@app.route('/chat-poruke', methods=['GET'])
+def chat_poruke_get():
+    """Portal periodično proverava ima li novih poruka (uključujući odgovore računovođe)."""
+    firma_id = request.args.get('firma_id', '')
+    if not firma_id:
+        return jsonify({'ok': False, 'poruka': 'Nedostaje firma_id.'}), 400
+    sve = ucitaj_chat()
+    nit = sve.get(firma_id, {'poruke': []})
+    return jsonify({'ok': True, 'poruke': nit.get('poruke', [])})
+
+@app.route('/chat-odgovori', methods=['OPTIONS'])
+def chat_odgovori_opt(): return '', 200
+
+@app.route('/chat-odgovori', methods=['POST'])
+def chat_odgovori():
+    """Računovođa odgovara kroz admin panel — šalje push notifikaciju klijentu."""
+    data = request.get_json(force=True, silent=True) or {}
+    if data.get('token') != CHAT_TOKEN:
+        return jsonify({'ok': False, 'poruka': 'Pogresna admin lozinka.'}), 403
+
+    firma_id = data.get('firma_id', '')
+    tekst = data.get('tekst', '')
+    if not firma_id or not tekst:
+        return jsonify({'ok': False, 'poruka': 'Nedostaju podaci.'}), 400
+
+    sve = ucitaj_chat()
+    nit = sve.get(firma_id, {'firma_naziv': 'Firma', 'poruke': []})
+    nit['poruke'].append({'od': 'racunovodja', 'tekst': tekst, 'vreme': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
+    sve[firma_id] = nit
+    sacuvaj_chat(sve)
+
+    posalji_push_firmi(firma_id, '💬 Novi odgovor od računovođe', tekst, url='/portal', tag='chat-odgovor')
+    return jsonify({'ok': True, 'poruka': 'Odgovor poslat.'})
+
+@app.route('/admin')
+def admin_chat():
+    """Prosta admin stranica — pregled svih razgovora i odgovaranje. Zaštićena lozinkom u URL-u."""
+    token = request.args.get('token', '')
+    if token != CHAT_TOKEN:
+        return '<h2 style="font-family:sans-serif">Pogrešan token. Dodajte ?token=VASA_LOZINKA u adresu.</h2>', 403
+
+    sve = ucitaj_chat()
+    firme_html = ''
+    for fid, nit in sorted(sve.items(), key=lambda x: (x[1].get('poruke') or [{}])[-1].get('vreme',''), reverse=True):
+        poruke = nit.get('poruke', [])
+        poslednja = poruke[-1]['tekst'] if poruke else ''
+        firme_html += f'''<div class="firma" onclick="izaberi('{fid}','{nit.get('firma_naziv','Firma')}')">
+            <div class="fnaziv">{nit.get('firma_naziv','Firma')}</div>
+            <div class="fposlednja">{poslednja[:50]}</div>
+        </div>'''
+
+    return f'''<!DOCTYPE html><html lang="sr"><head><meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Finity Admin — Chat</title>
+    <style>
+    *{{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,sans-serif}}
+    body{{display:flex;height:100vh;background:#F3F4F8}}
+    .sidebar{{width:280px;background:#fff;border-right:1px solid #E4E6EE;overflow-y:auto}}
+    .sidebar h2{{padding:16px;font-size:16px;background:#1B2B4B;color:#fff}}
+    .firma{{padding:12px 16px;border-bottom:1px solid #F3F4F8;cursor:pointer}}
+    .firma:hover{{background:#F3F4F8}}
+    .fnaziv{{font-weight:700;font-size:13px;color:#1B2B4B}}
+    .fposlednja{{font-size:11.5px;color:#96A3B5;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+    .main{{flex:1;display:flex;flex-direction:column}}
+    .main-hdr{{padding:14px 20px;background:#fff;border-bottom:1px solid #E4E6EE;font-weight:700;color:#1B2B4B}}
+    .msgs{{flex:1;overflow-y:auto;padding:20px}}
+    .msg{{max-width:60%;padding:10px 14px;border-radius:14px;margin-bottom:10px;font-size:13.5px}}
+    .msg.klijent{{background:#fff;box-shadow:0 1px 6px rgba(27,43,75,.08)}}
+    .msg.racunovodja{{background:#1B2B4B;color:#fff;margin-left:auto}}
+    .vreme{{font-size:10px;color:#96A3B5;margin-top:4px}}
+    .input-row{{display:flex;gap:10px;padding:16px;background:#fff;border-top:1px solid #E4E6EE}}
+    .input-row input{{flex:1;padding:12px;border:1.5px solid #E4E6EE;border-radius:10px;font-size:14px}}
+    .input-row button{{padding:12px 20px;background:#1B2B4B;color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:700}}
+    </style></head><body>
+    <div class="sidebar"><h2>💬 Razgovori</h2>{firme_html or '<div style="padding:16px;color:#96A3B5">Nema poruka</div>'}</div>
+    <div class="main">
+      <div class="main-hdr" id="hdr">Izaberite razgovor</div>
+      <div class="msgs" id="msgs"></div>
+      <div class="input-row"><input id="inp" placeholder="Napišite odgovor..." onkeypress="if(event.key==='Enter')posalji()"><button onclick="posalji()">Pošalji</button></div>
+    </div>
+    <script>
+    const TOKEN = "{token}";
+    let aktivnaFirma = null, aktivniNaziv = null;
+
+    function izaberi(fid, naziv){{
+      aktivnaFirma = fid; aktivniNaziv = naziv;
+      document.getElementById('hdr').textContent = naziv;
+      ucitaj();
+    }}
+
+    async function ucitaj(){{
+      if(!aktivnaFirma) return;
+      const r = await fetch('/chat-poruke?firma_id='+encodeURIComponent(aktivnaFirma));
+      const j = await r.json();
+      const poruke = j.poruke || [];
+      document.getElementById('msgs').innerHTML = poruke.map(p =>
+        `<div class="msg ${{p.od}}">${{p.tekst}}<div class="vreme">${{p.vreme}}</div></div>`
+      ).join('');
+      document.getElementById('msgs').scrollTop = 999999;
+    }}
+
+    async function posalji(){{
+      const inp = document.getElementById('inp');
+      const tekst = inp.value.trim();
+      if(!tekst || !aktivnaFirma) return;
+      inp.value = '';
+      await fetch('/chat-odgovori', {{method:'POST', headers:{{'Content-Type':'application/json'}},
+        body: JSON.stringify({{token: TOKEN, firma_id: aktivnaFirma, tekst}})}});
+      ucitaj();
+    }}
+
+    setInterval(ucitaj, 5000);
+    </script></body></html>'''
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
