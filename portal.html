@@ -162,7 +162,7 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
 .cinp-row{display:flex;gap:7px;align-items:center;padding-top:8px;border-top:1px solid var(--brd);flex-shrink:0}
 .cinp{flex:1;padding:10px 13px;background:var(--slate);border:1.5px solid var(--brd);border-radius:12px;font-size:13.5px;font-family:'Inter',sans-serif;outline:none;color:var(--navy)}
 .cinp:focus{border-color:var(--gold);background:#fff}
-.sbtn{width:40px;height:40px;background:var(--navy);border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;flex-shrink:0}
+.sbtn{width:40px;height:40px;background:var(--navy);border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;flex-shrink:0;color:#fff}
 
 /* EMPTY */
 .empty{text-align:center;padding:32px 16px;color:#96A3B5}
@@ -289,15 +289,15 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
   <!-- ═══ PREGLED ═══ -->
   <div id="t-pregled">
     <div class="sg">
-      <div class="st nv">
+      <div class="st nv" onclick="otvoriPrihodPopup()" style="cursor:pointer">
         <div class="st-ic">💰</div>
         <div class="st-v" id="s-prihod">—</div>
-        <div class="st-l">Prihod KPO (RSD)</div>
+        <div class="st-l">Ukupan prihod (RSD) <span style="text-decoration:underline">— po godinama</span></div>
       </div>
       <div class="st">
         <div class="st-ic">🏦</div>
         <div class="st-v" id="s-stanje">—</div>
-        <div class="st-l" id="s-stanje-lbl">Stanje računa (RSD)</div>
+        <div class="st-l" id="s-stanje-lbl">Stanje na tekućem računu</div>
       </div>
       <div class="st">
         <div class="st-ic">📄</div>
@@ -426,6 +426,12 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
     <div class="sg">
       <div class="st nv"><div class="st-ic">🏦</div><div class="st-v" id="izv-stanje">—</div><div class="st-l">Trenutno stanje</div></div>
       <div class="st"><div class="st-ic">📋</div><div class="st-v" id="izv-br">—</div><div class="st-l">Poslednji izvod br.</div></div>
+    </div>
+    <div class="frow">
+      <div class="frow-t">Izvodi</div>
+      <select class="fsel" id="izv-year" onchange="renderIzvodi()">
+        <option value="sve">Sve godine</option>
+      </select>
     </div>
     <div id="izv-lista"></div>
   </div>
@@ -743,7 +749,7 @@ function renderPregled(){
   document.getElementById('s-prihod').textContent = fmt(prihod);
   if(pratiIzvode()){
     document.getElementById('s-stanje').textContent = fmt(stanje);
-    document.getElementById('s-stanje-lbl').textContent = 'Stanje računa (RSD)';
+    document.getElementById('s-stanje-lbl').textContent = 'Stanje na tekućem računu';
   } else {
     document.getElementById('s-stanje').textContent = '—';
     document.getElementById('s-stanje-lbl').textContent = 'Ne dostavlja izvode';
@@ -803,38 +809,54 @@ function renderPregled(){
     : '<span class="ch chr">Ne</span>';
 
   // OČEKIVANI PRILIVI — kombinuje FAKTURE i KPO (zajednička funkcija, koristi je i Kalendar tab)
+  renderOcekivaniPrilivi();
+}
+
+let prilivProsireno = false;
+
+function toggleProsirenjePriliva(){
+  prilivProsireno = !prilivProsireno;
+  renderOcekivaniPrilivi();
+}
+
+function renderOcekivaniPrilivi(){
   const nedospele = izracunajOcekivaneProlive();
   const prilivEl = document.getElementById('prilivi-list');
 
   if(!nedospele.length){
     prilivEl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-ic">✅</div><div class="empty-t">Sav promet je izmiren</div></div>';
-  } else {
-    const ukupnoIznos = nedospele.reduce((a,x)=>a+x.preostalo,0);
-    const kasneStavke = nedospele.filter(x=>x.kasni);
-    const kasnoIznos = kasneStavke.reduce((a,x)=>a+x.preostalo,0);
-
-    let html = `<div class="sg" style="margin-bottom:11px">
-      <div class="st"><div class="st-ic">📋</div><div class="st-v o">${fmt(ukupnoIznos)}</div><div class="st-l">Neizmireno (${nedospele.length})</div></div>
-      <div class="st"><div class="st-ic">⏰</div><div class="st-v r">${fmt(kasnoIznos)}</div><div class="st-l">Kasni (${kasneStavke.length})</div></div>
-    </div>`;
-
-    html += nedospele.slice(0,12).map(x=>{
-      const rokTxt = x.kasni ? `⏰ Kasni ${x.dana} d.` : (x.dana===0 ? '🔵 Dospeva danas' : `🟡 Dospeva za ${x.dana} d.`);
-      return `<div class="ir">
-        <span class="il">${x.br} · ${x.klijent}<br><span style="font-size:10px;font-weight:600">${rokTxt}</span></span>
-        <span class="iv ${x.kasni?'r':'o'}">${fmt(x.preostalo)} RSD</span>
-      </div>`;
-    }).join('');
-
-    if(nedospele.length>12){
-      html += `<div style="text-align:center;font-size:11px;color:#96A3B5;padding-top:8px">+ još ${nedospele.length-12} stavki</div>`;
-    }
-    html += `<div class="ir" style="border-top:1.5px solid var(--brd);margin-top:6px;padding-top:10px">
-      <span class="il" style="font-weight:700;color:var(--navy)">UKUPNO</span>
-      <span class="iv" style="font-size:14px">${fmt(ukupnoIznos)} RSD</span>
-    </div>`;
-    prilivEl.innerHTML = html;
+    return;
   }
+
+  const ukupnoIznos = nedospele.reduce((a,x)=>a+x.preostalo,0);
+  const kasneStavke = nedospele.filter(x=>x.kasni);
+  const kasnoIznos = kasneStavke.reduce((a,x)=>a+x.preostalo,0);
+
+  let html = `<div class="sg" style="margin-bottom:11px">
+    <div class="st"><div class="st-ic">📋</div><div class="st-v o">${fmt(ukupnoIznos)}</div><div class="st-l">Neizmireno (${nedospele.length})</div></div>
+    <div class="st"><div class="st-ic">⏰</div><div class="st-v r">${fmt(kasnoIznos)}</div><div class="st-l">Kasni (${kasneStavke.length})</div></div>
+  </div>`;
+
+  const prikaz = prilivProsireno ? nedospele : nedospele.slice(0,12);
+
+  html += prikaz.map(x=>{
+    const rokTxt = x.kasni ? `⏰ Kasni ${x.dana} d.` : (x.dana===0 ? '🔵 Dospeva danas' : `🟡 Dospeva za ${x.dana} d.`);
+    return `<div class="ir">
+      <span class="il">${x.br} · ${x.klijent}<br><span style="font-size:10px;font-weight:600">${rokTxt}</span></span>
+      <span class="iv ${x.kasni?'r':'o'}">${fmt(x.preostalo)} RSD</span>
+    </div>`;
+  }).join('');
+
+  if(nedospele.length>12){
+    html += `<div onclick="toggleProsirenjePriliva()" style="text-align:center;font-size:11.5px;color:var(--gold);font-weight:700;padding:10px 0 2px;cursor:pointer">
+      ${prilivProsireno ? '▲ Prikaži manje' : `▼ Prikaži svih ${nedospele.length}`}
+    </div>`;
+  }
+  html += `<div class="ir" style="border-top:1.5px solid var(--brd);margin-top:6px;padding-top:10px">
+    <span class="il" style="font-weight:700;color:var(--navy)">UKUPNO</span>
+    <span class="iv" style="font-size:14px">${fmt(ukupnoIznos)} RSD</span>
+  </div>`;
+  prilivEl.innerHTML = html;
 }
 
 // ── ZAJEDNIČKA FUNKCIJA: neizmireni promet (fakture + KPO), koristi Pregled i Kalendar ──
@@ -1208,7 +1230,20 @@ function renderIzvodi(){
   document.getElementById('izv-stanje').textContent=fmt(last.ns||0)+' RSD';
   document.getElementById('izv-br').textContent=last.bn||'—';
 
-  document.getElementById('izv-lista').innerHTML=[...izv].sort((a,b)=>(b.d||'').localeCompare(a.d||'')).slice(0,15).map(izv=>{
+  // Popuni filter godina
+  const yearEl = document.getElementById('izv-year');
+  const trenutna = yearEl.value;
+  const sveGod = [...new Set(izv.map(i=>(i.d||'').slice(0,4)).filter(g=>g.length===4))].sort().reverse();
+  yearEl.innerHTML = '<option value="sve">Sve godine</option>' + sveGod.map(g=>`<option value="${g}">${g}</option>`).join('');
+  if(sveGod.includes(trenutna) || trenutna==='sve') yearEl.value = trenutna;
+
+  const godinaFilter = yearEl.value;
+  let lista = [...izv].sort((a,b)=>(b.d||'').localeCompare(a.d||''));
+  if(godinaFilter !== 'sve') lista = lista.filter(i=>(i.d||'').startsWith(godinaFilter));
+
+  document.getElementById('izv-lista').innerHTML = lista.length===0
+    ? '<div class="empty"><div class="empty-ic">🏦</div><div class="empty-t">Nema izvoda za izabranu godinu</div></div>'
+    : lista.slice(0,25).map(izv=>{
     const stavke = izv.stavke||[];
     const prihodi = stavke.filter(s=>parseFloat(s.iznos||0)>0).reduce((a,s)=>a+parseFloat(s.iznos),0);
     const rashodi = stavke.filter(s=>parseFloat(s.iznos||0)<0).reduce((a,s)=>a+Math.abs(parseFloat(s.iznos)),0);
@@ -1271,6 +1306,13 @@ function najnovijaGodina(godineObj){
   return kljucevi.sort((a,b)=>parseInt(a)-parseInt(b)).pop();
 }
 
+// stanje > 0 = dug (crveno), stanje < 0 = preplata (zeleno), stanje === 0 = izmireno (neutralno)
+function formatStanjePoreza(stanje){
+  if(stanje > 0) return {tekst: fmt(stanje)+' RSD', boja:'var(--red)', label:'Dug'};
+  if(stanje < 0) return {tekst: fmt(Math.abs(stanje))+' RSD', boja:'var(--green)', label:'Preplata'};
+  return {tekst: '0 RSD', boja:'#8A8F98', label:'Izmireno'};
+}
+
 function renderPoreska(){
   const el = document.getElementById('poreska-list');
   if(!el) return;
@@ -1288,8 +1330,9 @@ function renderPoreska(){
     const tekuca = posGod ? (godine[posGod]||{}) : {};
     const stanje = parseFloat(tekuca.stanje||0);
     const bop = (tekuca.bop||'').toString().trim(); // broj odobrenja za plaćanje — string, ne iznos
-    const rok = d.rok || '';
+    const rok = d.rok || ''; // JEDAN zajednički rok po kategoriji (sledeći/aktuelni) — ne postoji po godinama
 
+    // "Rok nije unet" je normalno stanje (npr. dug je izmiren pa nema sledeći rok), ne greška
     let rokBoja = 'g', rokTxt = rok ? 'Rok: '+srpD(rok) : 'Rok nije unet';
     if(rok && rok < danas){ rokBoja='r'; rokTxt='⏰ Kasni od '+srpD(rok); }
     else if(rok){
@@ -1297,24 +1340,29 @@ function renderPoreska(){
       if(dana<=7){ rokBoja='o'; rokTxt=`⏳ Za ${dana} dana — ${srpD(rok)}`; }
     }
 
-    // Istorija po godinama (ako ima više od jedne)
+    const st = formatStanjePoreza(stanje);
+
+    // Istorija po godinama (ako ima više od jedne) — starije godine normalno nemaju svoj rok (rok je zajednički, ne po godini)
     const sveGod = Object.keys(godine).sort((a,b)=>parseInt(b)-parseInt(a));
     const istorija = sveGod.length>1 ? `
       <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--brd)">
-        ${sveGod.map(g=>`<div class="ir" style="padding:4px 0">
-          <span class="il" style="font-size:11px">${g}. ${godine[g].bop?('— BOP: '+godine[g].bop):''}</span>
-          <span class="iv" style="font-size:11px">${fmt(godine[g].stanje||0)} RSD</span>
-        </div>`).join('')}
+        ${sveGod.map(g=>{
+          const stG = formatStanjePoreza(parseFloat(godine[g].stanje||0));
+          return `<div class="ir" style="padding:4px 0">
+          <span class="il" style="font-size:11px">${g}. ${godine[g].bop?('— BOP '+g+': '+godine[g].bop):''}</span>
+          <span class="iv" style="font-size:11px;color:${stG.boja}">${stG.tekst}</span>
+        </div>`;
+        }).join('')}
       </div>` : '';
 
     return `<div class="por-item" style="flex-wrap:wrap">
-      <div class="por-ic" style="background:${k.bg}">${k.ic}</div>
       <div class="por-inf">
         <div class="por-nm">${k.naziv}</div>
-        <div class="por-sub">${bop ? 'BOP: '+bop : (posGod ? posGod+'. godina' : 'Nema unetih podataka')}</div>
+        <div class="por-sub">${bop ? `BOP ${posGod}: ${bop}` : (posGod ? posGod+'. godina' : 'Nema unetih podataka')}</div>
       </div>
       <div class="por-val">
-        <div class="por-stanje" style="color:${stanje>0?'var(--red)':'var(--green)'}">${fmt(stanje)} RSD</div>
+        <div class="por-stanje" style="color:${st.boja}">${st.tekst}</div>
+        <div style="font-size:10px;font-weight:700;color:${st.boja};text-align:right;margin-top:1px">${st.label}</div>
         <div class="por-rok iv ${rokBoja}">${rokTxt}</div>
       </div>
       ${istorija}
@@ -1396,6 +1444,32 @@ function otvoriPopup(s){
   document.getElementById('popup-overlay').classList.add('open');
 }
 function zatvoriPopup(){ document.getElementById('popup-overlay').classList.remove('open'); }
+
+// ── PRIHOD PO GODINAMA (popup na klik na "Ukupan prihod") ──
+function otvoriPrihodPopup(){
+  const poGodini = {};
+  pd.kpo.forEach(k=>{
+    const god = (k.dat||'').slice(0,4);
+    if(!god) return;
+    poGodini[god] = (poGodini[god]||0) + parseFloat(k.iz||k.uk||0);
+  });
+  const godine = Object.keys(poGodini).sort((a,b)=>parseInt(b)-parseInt(a));
+  const ukupno = Object.values(poGodini).reduce((a,v)=>a+v,0);
+
+  document.getElementById('popup-title').textContent = '💰 Prihod po godinama';
+  document.getElementById('popup-body').innerHTML = `
+    <div style="font-size:11px;color:#96A3B5;margin-bottom:10px;line-height:1.5">
+      Prikazan je prihod od kad vodimo vašu KPO knjigu — ne postoje podaci od pre toga.
+    </div>
+    ${godine.length===0 ? '<div class="empty" style="padding:16px"><div class="empty-t">Nema podataka</div></div>' :
+      godine.map(g=>`<div class="ir"><span class="il">${g}. godina</span><span class="iv">${fmt(poGodini[g])} RSD</span></div>`).join('')}
+    <div class="ir" style="border-top:1.5px solid var(--brd);margin-top:6px;padding-top:10px">
+      <span class="il" style="font-weight:700;color:var(--navy)">UKUPNO</span>
+      <span class="iv" style="font-size:15px">${fmt(ukupno)} RSD</span>
+    </div>
+  `;
+  document.getElementById('popup-overlay').classList.add('open');
+}
 
 // ── KOMITENTI ──
 function agregirajKomitente(){
