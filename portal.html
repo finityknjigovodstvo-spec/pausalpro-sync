@@ -824,7 +824,17 @@ function renderOcekivaniPrilivi(){
   const prilivEl = document.getElementById('prilivi-list');
 
   if(!nedospele.length){
-    prilivEl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-ic">✅</div><div class="empty-t">Sav promet je izmiren</div></div>';
+    const sve = svePrometeSaStatusom();
+    if(sve.length === 0){
+      // Nema nikakvog prometa (nijedna faktura/KPO zapis)
+      prilivEl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-ic">📭</div><div class="empty-t">Još nema evidentiranog prometa.</div></div>';
+    } else if(sve.every(x => x.st.cls === 'nt')){
+      // Sve stavke postoje, ali se izmirenje ne prati ni za jednu (globalno ili pojedinačno)
+      prilivEl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-ic">➖</div><div class="empty-t">Za ovog klijenta se ne prati izmirenje faktura.</div></div>';
+    } else {
+      // Ima praćenih stavki i sve su stvarno izmirene
+      prilivEl.innerHTML = '<div class="empty" style="padding:16px"><div class="empty-ic">✅</div><div class="empty-t">Sav praćeni promet je izmiren.</div></div>';
+    }
     return;
   }
 
@@ -905,18 +915,19 @@ function jeStornoDokument(f){
   return !!(f && f.stornoOd);
 }
 
-function izracunajOcekivaneProlive(){
+// Vraća SVE promete sa izračunatim statusom (bez filtriranja) — koristi je izracunajOcekivaneProlive
+// i logika koja mora da zna KOLIKO je ukupno praćeno vs neplaćeno vs "ne prati se"
+function svePrometeSaStatusom(){
   const naplaceno = izracunajStatuse();
   const stornirano = izracunajStorniraneBrojeve();
   const jeStornoKpo = k => (k.vrsta||'')==='Storno fakture' || parseFloat(k.iz||k.uk||0) < 0;
 
-  // datumIzdavanja se čuva odvojeno od roka — rok se računa: datum izdavanja + broj dana klijenta (podrazumevano 60)
   const prometMap = new Map();
   pd.kpo.forEach(k=>{
     if(jeStornoKpo(k)) return;
     const br = k.br || '';
     if(!br) return;
-    if(stornirano.has(br)) return; // faktura je poništena storno fakturom — ne prati se kao dug
+    if(stornirano.has(br)) return;
     prometMap.set(br, {br, klijent:k.kl||'—', iznos:parseFloat(k.iz||k.uk||0), datumIzdavanja:k.dat||''});
   });
   pd.fakture.forEach(f=>{
@@ -929,19 +940,22 @@ function izracunajOcekivaneProlive(){
 
   const danas = new Date().toISOString().slice(0,10);
   const nepratiSet = izracunajNepratiBrojeve();
-  return [...prometMap.values()]
-    .map(p=>{
-      const st = statusZaBroj(p.br, p.iznos, naplaceno, nepratiSet);
-      const rokDana = rokZaKlijenta(p.klijent);
-      let rokDatum = '';
-      if(p.datumIzdavanja){
-        const d = new Date(p.datumIzdavanja+'T00:00:00');
-        if(!isNaN(d)){ d.setDate(d.getDate()+rokDana); rokDatum = d.toISOString().slice(0,10); }
-      }
-      const kasni = !!(rokDatum && rokDatum < danas);
-      const dana = rokDatum ? Math.abs(Math.round((new Date(danas)-new Date(rokDatum))/86400000)) : 0;
-      return {...p, datum:rokDatum, st, kasni, dana, rokDana, preostalo: st.ostatak!=null?st.ostatak:p.iznos};
-    })
+  return [...prometMap.values()].map(p=>{
+    const st = statusZaBroj(p.br, p.iznos, naplaceno, nepratiSet);
+    const rokDana = rokZaKlijenta(p.klijent);
+    let rokDatum = '';
+    if(p.datumIzdavanja){
+      const d = new Date(p.datumIzdavanja+'T00:00:00');
+      if(!isNaN(d)){ d.setDate(d.getDate()+rokDana); rokDatum = d.toISOString().slice(0,10); }
+    }
+    const kasni = !!(rokDatum && rokDatum < danas);
+    const dana = rokDatum ? Math.abs(Math.round((new Date(danas)-new Date(rokDatum))/86400000)) : 0;
+    return {...p, datum:rokDatum, st, kasni, dana, rokDana, preostalo: st.ostatak!=null?st.ostatak:p.iznos};
+  });
+}
+
+function izracunajOcekivaneProlive(){
+  return svePrometeSaStatusom()
     .filter(x=>x.st.cls==='no' || x.st.cls==='part')
     .sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
 }
