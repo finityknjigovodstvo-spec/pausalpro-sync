@@ -27,6 +27,9 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
 .lf label{display:block;font-size:11px;font-weight:700;color:#5A6880;margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
 .lf select,.lf input{width:100%;padding:12px 13px;background:var(--slate);border:1.5px solid var(--brd);border-radius:11px;font-size:14px;font-family:'Inter',sans-serif;outline:none;color:var(--navy);transition:border-color .15s}
 .lf select:focus,.lf input:focus{border-color:var(--gold);background:#fff}
+.inp-wrap{position:relative}
+.inp-eye{position:absolute;right:13px;top:50%;transform:translateY(-50%);font-size:17px;cursor:pointer;user-select:none;opacity:.6}
+.inp-eye:active{opacity:1}
 .lbtn{width:100%;padding:13px;background:var(--navy);color:#fff;border:none;border-radius:11px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;margin-top:4px;transition:opacity .15s}
 .lbtn:active{opacity:.85}
 .lerr{font-size:12px;color:var(--red);margin-top:8px;display:none;text-align:center}
@@ -231,20 +234,16 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
     <div class="l-ic">Ф</div>
     <div class="l-title">Finity Portal</div>
     <div class="l-sub">Vaš računovodstveni portal</div>
-    <div class="lf"><label>Vaša firma</label>
-      <select id="sel-firma">
-        <option value="">— Izaberite firmu —</option>
-        <option value="firma_1782402272290">M Centar Čistoće</option>
-        <option value="firma_1782402326844">NA Studio</option>
-        <option value="firma_1783351229437">ITK</option>
-        <option value="firma_1785518001802">Azzurro Plus</option>
-        <option value="firma_1785779319676">Azzurro</option>
-        <option value="firma_1785792886476">Tehnike Komunikacije</option>
-        <option value="firma_1785867223445">Marko Pantović Pr</option>
-      </select>
+    <div class="lf"><label>PIB firme</label>
+      <input type="text" id="inp-pib" placeholder="npr. 108456789" inputmode="numeric" maxlength="9">
     </div>
-    <div class="lf"><label>Lozinka</label><input type="password" id="inp-pass" placeholder="Unesite lozinku"></div>
-    <div class="lerr" id="lerr">Pogrešna firma ili lozinka.</div>
+    <div class="lf"><label>Lozinka</label>
+      <div class="inp-wrap">
+        <input type="password" id="inp-pass" placeholder="Unesite lozinku" style="padding-right:44px">
+        <div class="inp-eye" onclick="togglePass()" id="inp-eye">👁️</div>
+      </div>
+    </div>
+    <div class="lerr" id="lerr">Pogrešan PIB ili lozinka.</div>
     <button class="lbtn" onclick="prijavi()">Prijavite se →</button>
     <div style="margin-top:12px;font-size:10.5px;color:#96A3B5;text-align:center">Lozinku vam daje vaš računovođa</div>
   </div>
@@ -527,15 +526,31 @@ const FIRME_INFO = {
 let firma = null;
 let pd = {fakture:[],kpo:[],izv:[],potrazivanja:[],naplate:[],settings:{}};
 
-// ── LOGIN ──
+// ── LOGIN — po PIB-u umesto padajuće liste (da se ne otkrije broj/spisak klijenata) ──
+function pronadjiFirmuPoPibu(pib){
+  const p = (pib||'').trim();
+  if(!p) return null;
+  const fid = Object.keys(FIRME_INFO).find(k => FIRME_INFO[k].pib === p);
+  return fid || null;
+}
+
 function prijavi(){
-  const fid = document.getElementById('sel-firma').value;
+  const pib = document.getElementById('inp-pib').value;
   const pass = document.getElementById('inp-pass').value;
-  if(!fid){ toast('Izaberite firmu.'); return; }
-  if(LOZINKE[fid] !== pass){ document.getElementById('lerr').style.display='block'; return; }
+  const fid = pronadjiFirmuPoPibu(pib);
+  if(!fid || LOZINKE[fid] !== pass){ document.getElementById('lerr').style.display='block'; return; }
+  document.getElementById('lerr').style.display='none';
   firma = {id:fid, ...FIRME_INFO[fid]};
   localStorage.setItem('fp_f', JSON.stringify(firma));
   startApp();
+}
+
+function togglePass(){
+  const inp = document.getElementById('inp-pass');
+  const eye = document.getElementById('inp-eye');
+  const otkriveno = inp.type === 'text';
+  inp.type = otkriveno ? 'password' : 'text';
+  eye.textContent = otkriveno ? '👁️' : '🙈';
 }
 
 function odjavi(){
@@ -1550,6 +1565,7 @@ function srpD(dstr){
 }
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
 document.getElementById('inp-pass').addEventListener('keypress',e=>{ if(e.key==='Enter') prijavi(); });
+document.getElementById('inp-pib').addEventListener('keypress',e=>{ if(e.key==='Enter') document.getElementById('inp-pass').focus(); });
 </script>
 </body>
 </html>
