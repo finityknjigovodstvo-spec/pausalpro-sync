@@ -5,17 +5,16 @@ Kompatibilan sa Finity aplikacijom (akcije: ping, save, load)
 Railway hosting — čuva podatke u JSON fajlovima
 """
 from flask import Flask, request, jsonify, render_template_string
-import json, os, smtplib
-from email.mime.text import MIMEText
+import json, os, requests
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
 SYNC_TOKEN = os.environ.get('FINITY_TOKEN', 'pausalpro2026')
 
-# ─── EMAIL PODEŠAVANJA (Gmail SMTP) ───
+# ─── EMAIL PODEŠAVANJA (Resend — HTTPS API, ne SMTP jer Railway blokira SMTP portove) ───
 GMAIL_USER = os.environ.get('GMAIL_USER', 'finity.knjigovodstvu@gmail.com')
-GMAIL_APP_PASSWORD = os.environ.get('GMAIL_APP_PASSWORD', '')
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 
 # ─── PUSH NOTIFIKACIJE (Web Push / VAPID) ───
 VAPID_PUBLIC_KEY  = os.environ.get('VAPID_PUBLIC_KEY',  'BGhZWYu2LsRdwfTk5qpnrWqJWWCNY5rPHlbKQtI0Dp8EnyGjMF-YC5asmX2J-I2xD1ERyKcf2ValR4NujlGWALU')
@@ -703,7 +702,7 @@ def service_worker():
     except FileNotFoundError:
         return '// sw.js nije pronađen na serveru', 404, {'Content-Type': 'application/javascript'}
 
-# ─── CHAT PORUKA → EMAIL (server-side, bez trećih servisa) ───
+# ─── CHAT PORUKA → EMAIL (preko Resend HTTP API — radi čak i kad hosting blokira SMTP portove) ───
 @app.route('/chat-poruka', methods=['OPTIONS'])
 def chat_poruka_opt(): return '', 200
 
@@ -717,26 +716,32 @@ def chat_poruka():
     if not poruka:
         return jsonify({'ok': False, 'poruka': 'Prazna poruka.'}), 400
 
-    if not GMAIL_APP_PASSWORD:
+    if not RESEND_API_KEY:
         # Email nije podešen na serveru — samo zabeleži u log da se ne izgubi zahtev
         print(f"[CHAT — EMAIL NIJE PODESEN] {firma_naziv} ({firma_pib}): {poruka}")
         return jsonify({'ok': True, 'poruka': 'Zahtev zabelezen (email nije podesen na serveru).'})
 
     try:
-        telo = f"Firma: {firma_naziv}\nPIB: {firma_pib}\nVreme: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\nPoruka:\n{poruka}"
-        msg = MIMEText(telo, _charset='utf-8')
-        msg['Subject'] = f'Finity Portal — zahtev od {firma_naziv}'
-        msg['From'] = GMAIL_USER
-        msg['To'] = GMAIL_USER
+        telo = f"Firma: {firma_naziv}<br>PIB: {firma_pib}<br>Vreme: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br><br>Poruka:<br>{poruka}"
+        r = requests.post(
+            'https://api.resend.com/emails',
+            headers={'Authorization': f'Bearer {RESEND_API_KEY}', 'Content-Type': 'application/json'},
+            json={
+                'from': 'Finity Portal <onboarding@resend.dev>',
+                'to': [GMAIL_USER],
+                'subject': f'Finity Portal — zahtev od {firma_naziv}',
+                'html': telo,
+            },
+            timeout=10,
+        )
+        if r.status_code >= 300:
+            print('RESEND GRESKA:', r.status_code, r.text)
+            return jsonify({'ok': False, 'poruka': 'Greska pri slanju emaila.'}), 500
 
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-            server.send_message(msg)
-
-        print(f"[CHAT] Email poslat — {firma_naziv}")
+        print(f"[CHAT] Email poslat preko Resend — {firma_naziv}")
         return jsonify({'ok': True, 'poruka': 'Email poslat!'})
-    except Exception as e:
-        print('EMAIL GRESKA:', e)
+    except requests.exceptions.RequestException as e:
+        print('RESEND GRESKA (mreza):', e)
         return jsonify({'ok': False, 'poruka': 'Greska pri slanju emaila.'}), 500
 
 if __name__ == '__main__':
