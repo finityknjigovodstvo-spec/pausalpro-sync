@@ -402,13 +402,22 @@ body{font-family:'Inter',sans-serif;background:var(--slate);color:var(--navy);mi
       <div class="st-v r" id="tr-ukupno" style="font-size:24px">—</div>
       <div class="st-l">Ukupni troškovi (iz izvoda)</div>
     </div>
-    <div class="section-title">💸 Troškovi po kategoriji <span style="font-weight:400;color:#96A3B5;text-transform:none;letter-spacing:0">(kliknite za filter)</span></div>
+    <div class="section-title">💸 Kategorije <span style="font-weight:400;color:#96A3B5;text-transform:none;letter-spacing:0">(izaberite jednu ili više)</span></div>
     <div class="card" style="padding:11px 13px"><div id="tr-kat"></div></div>
+
+    <div id="tr-izabrano-box" style="display:none;background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:11px;box-shadow:0 1px 6px rgba(27,43,75,.07);border:1.5px solid var(--gold)">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:12px;font-weight:700;color:var(--navy)" id="tr-izabrano-lista">Izabrano: —</span>
+        <span onclick="ocistiTroskovFilter()" style="font-size:11px;color:var(--red);font-weight:600;cursor:pointer">✕ Poništi</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--brd)">
+        <span style="font-size:13px;font-weight:700;color:var(--navy)">Zbir izabranog</span>
+        <span style="font-size:16px;font-weight:800;color:var(--red)" id="tr-izabrano-suma">—</span>
+      </div>
+    </div>
+
     <div class="frow">
-      <div class="frow-t" id="tr-stavke-naslov">Stavke troškova</div>
-      <select class="fsel" id="tr-kat-filter" onchange="renderTroskovStavke()">
-        <option value="sve">Sve kategorije</option>
-      </select>
+      <div class="frow-t" id="tr-stavke-naslov">Sve stavke</div>
     </div>
     <div class="card" style="padding:11px 13px"><div id="tr-stavke"></div></div>
   </div>
@@ -568,7 +577,7 @@ async function pokreniPushNotifikacije(){
   if(Notification.permission === 'denied') return;
 
   try{
-    const reg = await navigator.serviceWorker.register('/sw.js');
+    const reg = await registrujServiceWorker();
     await navigator.serviceWorker.ready;
 
     // Ako već postoji pretplata, samo osveži je na serveru (za svaki slučaj)
@@ -604,6 +613,20 @@ async function posaljiPretplatuNaServer(sub){
     });
   }catch(e){ console.error('Slanje pretplate greška:', e); }
 }
+
+// ── Service Worker se registruje ODMAH pri otvaranju stranice (na login ekranu, pre prijave) ──
+// Ovo je BITNO za PWA "Install app" prepoznavanje — Chrome traži registrovan Service Worker
+// da bi ponudio pravu instalaciju umesto obične prečice sa Chrome ikonicom.
+let _swRegistracija = null;
+async function registrujServiceWorker(){
+  if(_swRegistracija) return _swRegistracija;
+  if(typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
+  try{
+    _swRegistracija = await navigator.serviceWorker.register('/sw.js');
+    return _swRegistracija;
+  }catch(e){ console.error('SW registracija greška:', e); return null; }
+}
+if(typeof navigator !== 'undefined') registrujServiceWorker(); // pokreni odmah, ne čekaj login
 
 window.addEventListener('load', () => {
   const s = localStorage.getItem('fp_f');
@@ -1031,9 +1054,10 @@ function renderKPO(){
   }).join('');
 }
 
-// ── TROSKOVNIK ──
+// ── TROSKOVNIK (multi-select filter po kategorijama) ──
 let troskovStavkeSve = [];
-let troskovKatFilter = 'sve';
+let troskovFilterSet = new Set(); // prazan = "sve kategorije"
+let troskovKategorijeSume = {};
 const TROSAK_ICONS = {'Bankarske provizije':'🏦','Porezi i doprinosi':'🏛️','Porez na prihod':'🏛️','Doprinos PIO':'👴','Doprinos zdravstvo':'🏥',
   'Doprinos nezaposlenost':'🛡️','Podizanje dobiti':'💵','Dobavljači':'🛒','Zakup':'🏠','Ostalo':'📦','Bez kategorije':'❔'};
 
@@ -1043,6 +1067,7 @@ function renderTroskovnik(){
     document.getElementById('tr-kat').innerHTML = '<div class="empty"><div class="empty-ic">💸</div><div class="empty-t">Ovaj klijent ne dostavlja izvode, pa se troškovi ne mogu izvući automatski.</div></div>';
     document.getElementById('tr-stavke-naslov').textContent = 'Stavke troškova';
     document.getElementById('tr-stavke').innerHTML = '';
+    document.getElementById('tr-izabrano-box').style.display = 'none';
     troskovStavkeSve = [];
     return;
   }
@@ -1073,25 +1098,22 @@ function renderTroskovnik(){
   }
 
   troskovStavkeSve = stavke;
+  troskovKategorijeSume = kategorije;
   document.getElementById('tr-ukupno').textContent = fmt(ukupno)+' RSD';
 
-  // Popuni filter select sa stvarnim kategorijama
-  const filterEl = document.getElementById('tr-kat-filter');
-  const trenutna = filterEl.value;
-  const sveKat = Object.keys(kategorije).sort();
-  filterEl.innerHTML = '<option value="sve">Sve kategorije</option>' + sveKat.map(k=>`<option value="${k}">${k}</option>`).join('');
-  if(sveKat.includes(trenutna) || trenutna==='sve') filterEl.value = trenutna;
+  // Ukloni iz seta kategorije koje više ne postoje u podacima
+  const sveKat = Object.keys(kategorije);
+  troskovFilterSet.forEach(k => { if(!sveKat.includes(k)) troskovFilterSet.delete(k); });
 
-  // Kategorije — kartice, klik postavlja filter (klik na već aktivnu vraća na "sve")
-  const aktivniFilter = document.getElementById('tr-kat-filter').value;
+  // Kategorije — kartice, klik DODAJE/UKLANJA iz izabranih (multi-select)
   const katSorted = Object.entries(kategorije).sort((a,b)=>b[1]-a[1]);
   document.getElementById('tr-kat').innerHTML = katSorted.length===0
     ? '<div class="empty"><div class="empty-ic">💸</div><div class="empty-t">Nema evidentiranih troškova</div></div>'
     : katSorted.map(([k,v])=>{
-        const aktivna = k===aktivniFilter;
+        const aktivna = troskovFilterSet.has(k);
         return `<div class="tr-item" style="cursor:pointer;${aktivna?'background:var(--goldpale);border-radius:10px;margin:0 -6px;padding:8px 6px':''}" onclick="postaviTroskovFilter('${k.replace(/'/g,"\\'")}')">
-        <div class="tr-ic" style="background:${aktivna?'#fff':'var(--slate)'}">${TROSAK_ICONS[k]||'📦'}</div>
-        <div class="tr-nm" style="${aktivna?'font-weight:800':''}">${k}${aktivna?' ✓':''}</div>
+        <div class="tr-ic" style="background:${aktivna?'#fff':'var(--slate)'}">${aktivna?'✅':(TROSAK_ICONS[k]||'📦')}</div>
+        <div class="tr-nm" style="${aktivna?'font-weight:800':''}">${k}</div>
         <div class="tr-iz">${fmt(v)} RSD</div>
       </div>`;
       }).join('');
@@ -1100,24 +1122,38 @@ function renderTroskovnik(){
 }
 
 function postaviTroskovFilter(kat){
-  const filterEl = document.getElementById('tr-kat-filter');
-  // klik na već aktivnu kategoriju — vrati na "sve" (toggle-off)
-  filterEl.value = (filterEl.value === kat) ? 'sve' : kat;
-  renderTroskovnik(); // osveži i kartice (da se markira nova aktivna) i listu ispod
-  document.getElementById('tr-stavke').scrollIntoView({behavior:'smooth', block:'nearest'});
+  if(troskovFilterSet.has(kat)) troskovFilterSet.delete(kat);
+  else troskovFilterSet.add(kat);
+  renderTroskovnik(); // osveži kartice (checkmark) i listu ispod
+}
+
+function ocistiTroskovFilter(){
+  troskovFilterSet.clear();
+  renderTroskovnik();
 }
 
 function renderTroskovStavke(){
-  const filter = document.getElementById('tr-kat-filter').value;
-  let lista = [...troskovStavkeSve];
-  if(filter !== 'sve') lista = lista.filter(s=>s.kat===filter);
+  const izabrano = [...troskovFilterSet];
+  const imaFilter = izabrano.length > 0;
+  let lista = imaFilter ? troskovStavkeSve.filter(s=>troskovFilterSet.has(s.kat)) : [...troskovStavkeSve];
   lista.sort((a,b)=>b.datum.localeCompare(a.datum));
 
-  document.getElementById('tr-stavke-naslov').textContent = filter==='sve'
-    ? `Sve stavke (${lista.length})`
-    : `${filter} (${lista.length})`;
+  document.getElementById('tr-stavke-naslov').textContent = imaFilter
+    ? `Izabrane kategorije (${lista.length})`
+    : `Sve stavke (${lista.length})`;
 
-  const prikaz = filter==='sve' ? lista.slice(0,25) : lista;
+  const prikaz = imaFilter ? lista : lista.slice(0,25);
+
+  // Kutija sa izabranim kategorijama i zbirom
+  const box = document.getElementById('tr-izabrano-box');
+  if(imaFilter){
+    box.style.display = 'block';
+    document.getElementById('tr-izabrano-lista').textContent = 'Izabrano: ' + izabrano.join(', ');
+    const sumaIzabranih = izabrano.reduce((a,k)=>a+(troskovKategorijeSume[k]||0), 0);
+    document.getElementById('tr-izabrano-suma').textContent = fmt(sumaIzabranih) + ' RSD';
+  } else {
+    box.style.display = 'none';
+  }
 
   let html = prikaz.length===0
     ? '<div class="empty-t" style="color:#96A3B5;text-align:center;padding:12px">Nema stavki za ovaj filter</div>'
@@ -1130,16 +1166,8 @@ function renderTroskovStavke(){
         <div class="k-iz" style="color:var(--red)">−${fmt(s.iznos)} RSD</div>
       </div>`).join('');
 
-  if(filter==='sve' && lista.length>25){
+  if(!imaFilter && lista.length>25){
     html += `<div style="text-align:center;font-size:11px;color:#96A3B5;padding-top:8px">+ još ${lista.length-25} — izaberite kategoriju za kompletan prikaz</div>`;
-  }
-
-  if(prikaz.length>0){
-    const suma = prikaz.reduce((a,s)=>a+s.iznos,0);
-    html += `<div class="ir" style="border-top:1.5px solid var(--brd);margin-top:8px;padding-top:10px">
-      <span class="il" style="font-weight:700;color:var(--navy)">UKUPNO${filter==='sve'?' (prikazano)':''}</span>
-      <span class="iv" style="font-size:14px;color:var(--red)">−${fmt(suma)} RSD</span>
-    </div>`;
   }
 
   document.getElementById('tr-stavke').innerHTML = html;
