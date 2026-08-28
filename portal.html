@@ -1327,61 +1327,68 @@ function formatStanjePoreza(stanje){
   return {tekst: '0 RSD', boja:'#8A8F98', label:'Izmireno'};
 }
 
+// Renderuje JEDNU poresku kategoriju (fiksnu ili iz ostalo[]) — koristi isti oblik: {naziv, rok, godine}
+function renderujPoreskuKategoriju(d, danas){
+  const godine = d.godine || {};
+  const posGod = najnovijaGodina(godine);
+  const tekuca = posGod ? (godine[posGod]||{}) : {};
+  const stanje = parseFloat(tekuca.stanje||0);
+  const bop = (tekuca.bop||'').toString().trim();
+  const rok = d.rok || '';
+
+  let rokBoja = 'g', rokTxt = rok ? 'Rok: '+srpD(rok) : 'Rok nije unet';
+  if(rok && rok < danas){ rokBoja='r'; rokTxt='⏰ Kasni od '+srpD(rok); }
+  else if(rok){
+    const dana = Math.ceil((new Date(rok)-new Date(danas))/86400000);
+    if(dana<=7){ rokBoja='o'; rokTxt=`⏳ Za ${dana} dana — ${srpD(rok)}`; }
+  }
+
+  const st = formatStanjePoreza(stanje);
+
+  const sveGod = Object.keys(godine).sort((a,b)=>parseInt(b)-parseInt(a));
+  const istorija = sveGod.length>1 ? `
+    <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--brd)">
+      ${sveGod.map(g=>{
+        const stG = formatStanjePoreza(parseFloat(godine[g].stanje||0));
+        return `<div class="ir" style="padding:4px 0">
+        <span class="il" style="font-size:11px">${g}. ${godine[g].bop?('— BOP '+g+': '+godine[g].bop):''}</span>
+        <span class="iv" style="font-size:11px;color:${stG.boja}">${stG.tekst}</span>
+      </div>`;
+      }).join('')}
+    </div>` : '';
+
+  return `<div class="por-item" style="flex-wrap:wrap">
+    <div class="por-inf">
+      <div class="por-nm">${d.naziv}</div>
+      <div class="por-sub">${bop ? `BOP ${posGod}: ${bop}` : (posGod ? posGod+'. godina' : 'Nema unetih podataka')}</div>
+    </div>
+    <div class="por-val">
+      <div class="por-stanje" style="color:${st.boja}">${st.tekst}</div>
+      <div style="font-size:10px;font-weight:700;color:${st.boja};text-align:right;margin-top:1px">${st.label}</div>
+      <div class="por-rok iv ${rokBoja}">${rokTxt}</div>
+    </div>
+    ${istorija}
+  </div>`;
+}
+
 function renderPoreska(){
   const el = document.getElementById('poreska-list');
   if(!el) return;
   const podaci = pd.poreskeObaveze;
-  const imaBiloSta = podaci && POREZ_KATEGORIJE.some(k => Object.keys((podaci[k.key]||{}).godine||{}).length);
-  if(!imaBiloSta){
+  const ostalo = (podaci && Array.isArray(podaci.ostalo)) ? podaci.ostalo : [];
+
+  const imaFiksnih = podaci && POREZ_KATEGORIJE.some(k => Object.keys((podaci[k.key]||{}).godine||{}).length);
+  const imaOstalih = ostalo.some(o => Object.keys((o.godine||{})).length);
+
+  if(!imaFiksnih && !imaOstalih){
     el.innerHTML = '<div class="empty"><div class="empty-ic">🏛️</div><div class="empty-t">Vaš računovođa još nije uneo stanje poreskih obaveza kroz Finity aplikaciju.</div></div>';
     return;
   }
+
   const danas = new Date().toISOString().slice(0,10);
-  el.innerHTML = POREZ_KATEGORIJE.map(k=>{
-    const d = (podaci && podaci[k.key]) || {};
-    const godine = d.godine || {};
-    const posGod = najnovijaGodina(godine);
-    const tekuca = posGod ? (godine[posGod]||{}) : {};
-    const stanje = parseFloat(tekuca.stanje||0);
-    const bop = (tekuca.bop||'').toString().trim(); // broj odobrenja za plaćanje — string, ne iznos
-    const rok = d.rok || ''; // JEDAN zajednički rok po kategoriji (sledeći/aktuelni) — ne postoji po godinama
-
-    // "Rok nije unet" je normalno stanje (npr. dug je izmiren pa nema sledeći rok), ne greška
-    let rokBoja = 'g', rokTxt = rok ? 'Rok: '+srpD(rok) : 'Rok nije unet';
-    if(rok && rok < danas){ rokBoja='r'; rokTxt='⏰ Kasni od '+srpD(rok); }
-    else if(rok){
-      const dana = Math.ceil((new Date(rok)-new Date(danas))/86400000);
-      if(dana<=7){ rokBoja='o'; rokTxt=`⏳ Za ${dana} dana — ${srpD(rok)}`; }
-    }
-
-    const st = formatStanjePoreza(stanje);
-
-    // Istorija po godinama (ako ima više od jedne) — starije godine normalno nemaju svoj rok (rok je zajednički, ne po godini)
-    const sveGod = Object.keys(godine).sort((a,b)=>parseInt(b)-parseInt(a));
-    const istorija = sveGod.length>1 ? `
-      <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--brd)">
-        ${sveGod.map(g=>{
-          const stG = formatStanjePoreza(parseFloat(godine[g].stanje||0));
-          return `<div class="ir" style="padding:4px 0">
-          <span class="il" style="font-size:11px">${g}. ${godine[g].bop?('— BOP '+g+': '+godine[g].bop):''}</span>
-          <span class="iv" style="font-size:11px;color:${stG.boja}">${stG.tekst}</span>
-        </div>`;
-        }).join('')}
-      </div>` : '';
-
-    return `<div class="por-item" style="flex-wrap:wrap">
-      <div class="por-inf">
-        <div class="por-nm">${k.naziv}</div>
-        <div class="por-sub">${bop ? `BOP ${posGod}: ${bop}` : (posGod ? posGod+'. godina' : 'Nema unetih podataka')}</div>
-      </div>
-      <div class="por-val">
-        <div class="por-stanje" style="color:${st.boja}">${st.tekst}</div>
-        <div style="font-size:10px;font-weight:700;color:${st.boja};text-align:right;margin-top:1px">${st.label}</div>
-        <div class="por-rok iv ${rokBoja}">${rokTxt}</div>
-      </div>
-      ${istorija}
-    </div>`;
-  }).join('');
+  let html = POREZ_KATEGORIJE.map(k => renderujPoreskuKategoriju({naziv:k.naziv, rok:(podaci[k.key]||{}).rok, godine:(podaci[k.key]||{}).godine}, danas)).join('');
+  html += ostalo.map(o => renderujPoreskuKategoriju(o, danas)).join('');
+  el.innerHTML = html;
 }
 
 // ── KALENDAR ──
@@ -1390,16 +1397,20 @@ function renderKalendar(){
   const danas = new Date().toISOString().slice(0,10);
   const stavke = [];
 
-  // Poreske obaveze rokovi (unosi računovođa kroz Finity)
+  // Poreske obaveze rokovi (unosi računovođa kroz Finity) — bez ikonica, i fiksne kategorije i ostalo[]
   if(pd.poreskeObaveze){
-    POREZ_KATEGORIJE.forEach(k=>{
-      const d = pd.poreskeObaveze[k.key];
-      if(d && d.rok){
-        const posGod = najnovijaGodina(d.godine);
-        const stanje = posGod ? parseFloat((d.godine[posGod]||{}).stanje||0) : 0;
-        stavke.push({datum:d.rok, naziv:k.naziv, tip:'porez', iznos:stanje, ic:k.ic});
-      }
-    });
+    const dodajPoresku = (naziv, d) => {
+      if(!d || !d.rok) return;
+      const posGod = najnovijaGodina(d.godine);
+      const tekuca = posGod ? (d.godine[posGod]||{}) : {};
+      // Akontacioni (mesečni) iznos ima prednost nad ukupnim stanjem, ako je unet — jasnije za klijenta
+      const iznosZaKalendar = (tekuca.akontacija != null && tekuca.akontacija !== '')
+        ? parseFloat(tekuca.akontacija||0)
+        : parseFloat(tekuca.stanje||0);
+      stavke.push({datum:d.rok, naziv, tip:'porez', iznos:iznosZaKalendar, ic:''});
+    };
+    POREZ_KATEGORIJE.forEach(k => dodajPoresku(k.naziv, pd.poreskeObaveze[k.key]));
+    (Array.isArray(pd.poreskeObaveze.ostalo) ? pd.poreskeObaveze.ostalo : []).forEach(o => dodajPoresku(o.naziv, o));
   }
 
   // Ručne kalendar stavke (unosi računovođa kroz Finity)
@@ -1438,7 +1449,7 @@ function renderKalendar(){
         <div class="kal-mes">${MESECI[d.getMonth()]}</div>
       </div>
       <div class="kal-inf">
-        <div class="kal-nm">${s.ic} ${s.naziv}</div>
+        <div class="kal-nm">${s.ic ? s.ic+' ' : ''}${s.naziv}</div>
         <div class="kal-sub">${fmt(s.iznos)} RSD</div>
       </div>
       <span class="kal-badge" style="background:${cls==='hitno'?'#FDEDEC':cls==='skoro'?'#FEF9E7':'#E8F8F1'};color:${cls==='hitno'?'var(--red)':cls==='skoro'?'var(--orange)':'var(--green)'}">${badge}</span>
